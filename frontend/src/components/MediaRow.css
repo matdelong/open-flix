@@ -1,0 +1,26 @@
+.media-row {
+  margin-bottom: 2rem;
+}
+
+.media-row h2 {
+  font-size: 1.4rem;
+  margin-bottom: 1rem;
+}
+
+.media-scroller {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 1rem; /* For scrollbar visibility */
+  gap: 1.5rem;
+}
+
+/* Hide scrollbar for a cleaner look */
+.media-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.media-scroller {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}

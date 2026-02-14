@@ -1,0 +1,185 @@
+import React, { useState, useEffect } from 'react';
+import './MediaDetail.css';
+
+// Define more detailed types to match the backend response
+interface Episode {
+  id: number;
+  episode_number: number;
+  title: string;
+  is_watched: boolean;
+}
+
+interface Season {
+  id: number;
+  season_number: number;
+  is_watched: boolean;
+  episodes: Episode[];
+}
+
+interface MediaDetailData {
+  id: number;
+  title: string;
+  type: 'movie' | 'tv_show';
+  poster_url: string | null;
+  year: number | null;
+  description: string | null;
+  rating: string | null;
+  is_watched: boolean;
+  genres: string[];
+  actors: string[];
+  seasons?: Season[];
+}
+
+interface MediaDetailProps {
+  mediaId: number;
+  onClose: () => void;
+}
+
+const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
+  const [media, setMedia] = useState<MediaDetailData | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDetails = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`http://localhost:3000/api/media/${mediaId}`);
+        if (!res.ok) {
+          throw new Error('Failed to fetch media details.');
+        }
+        const data = await res.json();
+        setMedia(data);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDetails();
+  }, [mediaId]);
+  
+  const makeApiCall = async (url: string, body: object) => {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        throw new Error('API request failed');
+      }
+    } catch (err) {
+      console.error(err);
+      // Optionally revert state change or show error to user
+    }
+  };
+
+  const toggleMediaWatched = () => {
+    if (!media) return;
+    const newWatchedState = !media.is_watched;
+    setMedia({ ...media, is_watched: newWatchedState });
+    makeApiCall(`http://localhost:3000/api/media/${media.id}/watched`, { is_watched: newWatchedState });
+  };
+
+  const toggleEpisodeWatched = (seasonIdx: number, episodeIdx: number) => {
+    if (!media || !media.seasons) return;
+
+    const newSeasons = media.seasons.map((season, sIdx) => {
+      if (sIdx !== seasonIdx) return season;
+      const newEpisodes = season.episodes.map((episode, eIdx) => {
+        if (eIdx !== episodeIdx) return episode;
+        return { ...episode, is_watched: !episode.is_watched };
+      });
+      return { ...season, episodes: newEpisodes };
+    });
+
+    const episode = newSeasons[seasonIdx].episodes[episodeIdx];
+    setMedia({ ...media, seasons: newSeasons });
+    makeApiCall(`http://localhost:3000/api/episodes/${episode.id}/watched`, { is_watched: episode.is_watched });
+  };
+  
+  const toggleSeasonWatched = (seasonIdx: number) => {
+    if (!media || !media.seasons) return;
+    
+    const newSeasons = media.seasons.map((season, sIdx) => {
+      if (sIdx !== seasonIdx) return season;
+      
+      const newWatchedState = !season.is_watched;
+      const newEpisodes = season.episodes.map(ep => ({ ...ep, is_watched: newWatchedState }));
+      return { ...season, is_watched: newWatchedState, episodes: newEpisodes };
+    });
+
+    const season = newSeasons[seasonIdx];
+    setMedia({ ...media, seasons: newSeasons });
+    makeApiCall(`http://localhost:3000/api/seasons/${season.id}/watched`, { is_watched: season.is_watched });
+  };
+
+  if (loading) return <div className="detail-loading">Loading...</div>;
+  if (error) return <div className="detail-error">Error: {error}</div>;
+  if (!media) return null;
+
+  return (
+    <div className="media-detail-backdrop">
+      <div className="media-detail-content">
+        <button className="close-button" onClick={onClose}>&times;</button>
+        <div className="detail-header">
+          <img src={media.poster_url || undefined} alt={`${media.title} poster`} className="detail-poster" />
+          <div className="detail-info">
+            <h1>{media.title} ({media.year})</h1>
+            <p className="detail-rating">IMDB Rating: {media.rating}</p>
+            <div className="detail-genres">
+              {media.genres.map(genre => <span key={genre} className="genre-chip">{genre}</span>)}
+            </div>
+            <p className="detail-description">{media.description}</p>
+            {media.type === 'movie' && (
+              <button onClick={toggleMediaWatched} className="watch-button">
+                {media.is_watched ? 'Mark as Unwatched' : 'Mark as Watched'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <h2>Cast</h2>
+        <ul className="detail-actors">
+          {media.actors.map(actor => <li key={actor}>{actor}</li>)}
+        </ul>
+
+        {media.type === 'tv_show' && media.seasons && (
+          <>
+            <h2>Seasons</h2>
+            <div className="seasons-container">
+              {media.seasons.map((season, seasonIdx) => (
+                <div key={season.id} className="season">
+                  <div className="season-header">
+                    <h3>Season {season.season_number}</h3>
+                    <button onClick={() => toggleSeasonWatched(seasonIdx)} className="watch-button season-watch-button">
+                      {season.is_watched ? 'Mark Season as Unwatched' : 'Mark Season as Watched'}
+                    </button>
+                  </div>
+                  <ul className="episode-list">
+                    {season.episodes.map((episode, episodeIdx) => (
+                      <li key={episode.id} className={episode.is_watched ? 'watched' : ''}>
+                        <label>
+                          <input 
+                            type="checkbox" 
+                            checked={episode.is_watched}
+                            onChange={() => toggleEpisodeWatched(seasonIdx, episodeIdx)}
+                          />
+                          Ep {episode.episode_number}: {episode.title}
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default MediaDetail;
