@@ -565,6 +565,122 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
   }
 });
 
+app.post('/api/media/:id/rescrape', async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    const mediaRes = await client.query('SELECT * FROM media WHERE id = $1', [id]);
+    if (mediaRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Media not found' });
+    }
+    const media = mediaRes.rows[0];
+
+    if (media.type !== 'tv_show') {
+      return res.status(400).json({ error: 'Cannot rescrape a movie.' });
+    }
+
+    await client.query('BEGIN');
+    
+    // Get existing watched episodes
+    const watchedEpisodesRes = await client.query(`
+      SELECT s.season_number, e.episode_number
+      FROM episodes e
+      JOIN seasons s ON e.season_id = s.id
+      WHERE s.media_id = $1 AND e.is_watched = TRUE
+    `, [id]);
+    const watchedEpisodes = new Set(watchedEpisodesRes.rows.map(r => `${r.season_number}-${r.episode_number}`));
+
+    // Clear existing episode data
+    await client.query(`
+      DELETE FROM episodes WHERE season_id IN (SELECT id FROM seasons WHERE media_id = $1)
+    `, [id]);
+    await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
+
+    const epguidesShowUrl = await getEpguidesShowUrl(media.title);
+    const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
+      headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+    });
+    
+    const $e = cheerio.load(epguidesPageData);
+    let currentSeason = 0;
+    let seasonsMap = new Map();
+
+    const rows = [];
+    $e('tr').each((i, el) => {
+      rows.push($e(el));
+    });
+
+    for (const row of rows) {
+      const seasonHeader = row.find("td.bold[colspan='4']");
+
+      if (seasonHeader.length) {
+        const seasonMatch = seasonHeader.text().match(/Season (\d+)/);
+        if (seasonMatch) {
+          currentSeason = parseInt(seasonMatch[1], 10);
+        } else if (seasonHeader.text().includes('Specials')) {
+          currentSeason = 0; // Use 0 for specials
+        }
+      } else if (currentSeason >= 0) {
+        const columns = row.find('td');
+        if (columns.length === 4) {
+          const episodeNumberStr = columns.eq(1).text().trim();
+          const specialMatch = episodeNumberStr.match(/S(\d+)\..*-(\d+)/);
+          const regularMatch = episodeNumberStr.match(/(\d+)-(\d+)/);
+
+          let seasonForEpisode, episodeInSeason, airDateStr, titleFromFile, airDate;
+
+          if (specialMatch) {
+            seasonForEpisode = parseInt(specialMatch[1], 10);
+            episodeInSeason = parseInt(specialMatch[2], 10);
+            airDateStr = columns.eq(2).text().trim();
+            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
+            airDate = parseAirDate(airDateStr);
+          } else if (regularMatch) {
+            seasonForEpisode = parseInt(regularMatch[1], 10);
+            if (currentSeason !== 0 && seasonForEpisode !== currentSeason) continue;
+
+            episodeInSeason = parseInt(regularMatch[2], 10);
+            airDateStr = columns.eq(2).text().trim();
+            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
+            airDate = parseAirDate(airDateStr);
+          } else {
+            continue;
+          }
+
+          let seasonIdForEpisode = seasonsMap.get(seasonForEpisode);
+          if (!seasonIdForEpisode) {
+            const yearForSeason = airDate ? airDate.getFullYear() : null;
+            const seasonRes = await client.query(
+              'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
+              [id, seasonForEpisode, yearForSeason]
+            );
+            seasonIdForEpisode = seasonRes.rows[0].id;
+            seasonsMap.set(seasonForEpisode, seasonIdForEpisode);
+            console.log(`Added Season ${seasonForEpisode} (${yearForSeason}) for ${media.title}`);
+          }
+          
+          const isWatched = watchedEpisodes.has(`${seasonForEpisode}-${episodeInSeason}`);
+          await client.query(
+            'INSERT INTO episodes (season_id, episode_number, title, air_date, is_watched) VALUES ($1, $2, $3, $4, $5)',
+            [seasonIdForEpisode, episodeInSeason, titleFromFile, airDate, isWatched]
+          );
+          console.log(`  Added S${seasonForEpisode}E${episodeInSeason}: ${titleFromFile} (${airDate})`);
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    res.sendStatus(204);
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Re-scraping error:', error);
+    res.status(500).json({ error: 'Failed to re-scrape episodes.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.listen(port, () => {
   console.log(`Backend listening at http://localhost:${port}`);
   initDb();

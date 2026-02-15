@@ -121,7 +121,10 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
       if (sIdx !== seasonIdx) return season;
       
       const newWatchedState = !season.is_watched;
-      const newEpisodes = season.episodes.map(ep => ({ ...ep, is_watched: newWatchedState }));
+      const newEpisodes = season.episodes.map(ep => {
+        const hasAired = !ep.air_date || new Date(ep.air_date) <= new Date();
+        return { ...ep, is_watched: hasAired ? newWatchedState : ep.is_watched };
+      });
       return { ...season, is_watched: newWatchedState, episodes: newEpisodes };
     });
 
@@ -174,7 +177,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
               </button>
             )}
             {media.type === 'tv_show' && (
-              <button onClick={handleRescrape} className="watch-button">
+              <button onClick={handleRescrape} className="watch-button" disabled={!media.seasons || media.seasons.every(s => s.episodes.every(ep => ep.air_date && new Date(ep.air_date) <= new Date()))}>
                 Re-scrape Episodes
               </button>
             )}
@@ -194,7 +197,11 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
                 <div key={season.id} className="season">
                   <div className="season-header">
                     <h3>Season {season.season_number} ({season.year})</h3>
-                    <button onClick={() => toggleSeasonWatched(seasonIdx)} className="watch-button season-watch-button">
+                    <button 
+                      onClick={() => toggleSeasonWatched(seasonIdx)} 
+                      className="watch-button season-watch-button"
+                      disabled={season.episodes.some(ep => !ep.air_date || new Date(ep.air_date) > new Date())}
+                    >
                       {season.is_watched ? 'Mark Season as Unwatched' : 'Mark Season as Watched'}
                     </button>
                   </div>
