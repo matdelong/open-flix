@@ -6,18 +6,21 @@ interface Episode {
   id: number;
   episode_number: number;
   title: string;
+  air_date: string | null;
   is_watched: boolean;
 }
 
 interface Season {
   id: number;
   season_number: number;
+  year: number | null;
   is_watched: boolean;
   episodes: Episode[];
 }
 
 interface MediaDetailData {
   id: number;
+  imdb_id: string;
   title: string;
   type: 'movie' | 'tv_show';
   poster_url: string | null;
@@ -57,8 +60,19 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
       }
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
     fetchDetails();
-  }, [mediaId]);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [mediaId, onClose]);
   
   const makeApiCall = async (url: string, body: object) => {
     try {
@@ -116,6 +130,25 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
     makeApiCall(`http://localhost:3000/api/seasons/${season.id}/watched`, { is_watched: season.is_watched });
   };
 
+  const handleRescrape = async () => {
+    if (!media) return;
+    setLoading(true);
+    try {
+      await fetch(`http://localhost:3000/api/media/${media.id}/rescrape`, { method: 'POST' });
+      // Refetch details to show updated data
+      const res = await fetch(`http://localhost:3000/api/media/${mediaId}`);
+      if (!res.ok) {
+        throw new Error('Failed to fetch updated media details.');
+      }
+      const data = await res.json();
+      setMedia(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) return <div className="detail-loading">Loading...</div>;
   if (error) return <div className="detail-error">Error: {error}</div>;
   if (!media) return null;
@@ -128,7 +161,9 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
           <img src={media.poster_url || undefined} alt={`${media.title} poster`} className="detail-poster" />
           <div className="detail-info">
             <h1>{media.title} ({media.year})</h1>
-            <p className="detail-rating">IMDB Rating: {media.rating}</p>
+            <a href={`https://www.imdb.com/title/${media.imdb_id}`} target="_blank" rel="noopener noreferrer" className="detail-rating">
+              IMDB Rating: {media.rating}
+            </a>
             <div className="detail-genres">
               {media.genres.map(genre => <span key={genre} className="genre-chip">{genre}</span>)}
             </div>
@@ -136,6 +171,11 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
             {media.type === 'movie' && (
               <button onClick={toggleMediaWatched} className="watch-button">
                 {media.is_watched ? 'Mark as Unwatched' : 'Mark as Watched'}
+              </button>
+            )}
+            {media.type === 'tv_show' && (
+              <button onClick={handleRescrape} className="watch-button">
+                Re-scrape Episodes
               </button>
             )}
           </div>
@@ -153,24 +193,29 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
               {media.seasons.map((season, seasonIdx) => (
                 <div key={season.id} className="season">
                   <div className="season-header">
-                    <h3>Season {season.season_number}</h3>
+                    <h3>Season {season.season_number} ({season.year})</h3>
                     <button onClick={() => toggleSeasonWatched(seasonIdx)} className="watch-button season-watch-button">
                       {season.is_watched ? 'Mark Season as Unwatched' : 'Mark Season as Watched'}
                     </button>
                   </div>
                   <ul className="episode-list">
-                    {season.episodes.map((episode, episodeIdx) => (
-                      <li key={episode.id} className={episode.is_watched ? 'watched' : ''}>
-                        <label>
-                          <input 
-                            type="checkbox" 
-                            checked={episode.is_watched}
-                            onChange={() => toggleEpisodeWatched(seasonIdx, episodeIdx)}
-                          />
-                          Ep {episode.episode_number}: {episode.title}
-                        </label>
-                      </li>
-                    ))}
+                    {season.episodes.map((episode, episodeIdx) => {
+                      const hasAired = !episode.air_date || new Date(episode.air_date) <= new Date();
+                      return (
+                        <li key={episode.id} className={episode.is_watched ? 'watched' : ''}>
+                          <label>
+                            <input 
+                              type="checkbox" 
+                              checked={episode.is_watched}
+                              onChange={() => hasAired && toggleEpisodeWatched(seasonIdx, episodeIdx)}
+                              disabled={!hasAired}
+                            />
+                            Ep {episode.episode_number}: {episode.title}
+                            {episode.air_date && <span className="air-date" style={{marginLeft: '8px'}}>({new Date(episode.air_date).toLocaleDateString()})</span>}
+                          </label>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               ))}

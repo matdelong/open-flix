@@ -17,7 +17,6 @@ function App() {
   const [groupedMedia, setGroupedMedia] = useState<GroupedMedia>({});
   const [error, setError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [mediaType, setMediaType] = useState<'movie' | 'tv_show' | null>(null);
   const [imdbUrl, setImdbUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'tv_show' | 'movie'>('tv_show');
@@ -42,23 +41,22 @@ function App() {
     fetchMedia();
   }, []);
 
-  const openModal = (type: 'movie' | 'tv_show') => {
-    setMediaType(type);
+  const openModal = () => {
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setImdbUrl('');
-    setMediaType(null);
   };
 
   const handleAddMedia = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!mediaType) return;
 
     setIsLoading(true);
     setError('');
+
+    console.log('Attempting to add media with IMDB URL:', imdbUrl);
 
     try {
       const res = await fetch('http://localhost:3000/api/media', {
@@ -66,16 +64,20 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ imdbUrl, type: mediaType }),
+        body: JSON.stringify({ imdbUrl }),
       });
+
+      console.log('Fetch response:', res);
 
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
       }
+      
+      const addedMedia = await res.json();
 
       await fetchMedia(); // Refresh the media list
-      setActiveTab(mediaType); // Switch to the correct tab
+      setActiveTab(addedMedia.type); // Switch to the correct tab
       closeModal();
     } catch (err: any) {
       setError(err.message);
@@ -114,8 +116,7 @@ function App() {
           <button onClick={() => setActiveTab('movie')} className={activeTab === 'movie' ? 'active' : ''}>Movies</button>
         </nav>
         <div className="header-actions">
-          <button onClick={() => openModal('movie')}>Add Movie</button>
-          <button onClick={() => openModal('tv_show')}>Add TV Show</button>
+          <button onClick={openModal}>Add Media</button>
         </div>
       </header>
 
@@ -138,7 +139,7 @@ function App() {
       {isModalOpen && (
         <div className="modal-backdrop">
           <div className="modal-content">
-            <h2>Add New {mediaType === 'movie' ? 'Movie' : 'TV Show'}</h2>
+            <h2>Add New Media</h2>
             <form onSubmit={handleAddMedia}>
               <input
                 type="text"

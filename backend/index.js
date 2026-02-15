@@ -3,9 +3,44 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const he = require('he');
 
 const app = express();
 const port = 3000;
+
+// Function to parse date strings from epguides.com (e.g., "13 Jan 15")
+function parseAirDate(dateStr) {
+  const parts = dateStr.split(' ');
+  if (parts.length !== 3) return null;
+  const day = parts[0];
+  const month = parts[1];
+  const year = `20${parts[2]}`;
+  return new Date(`${day} ${month} ${year}`);
+}
+
+// Function to normalize titles for epguides.com URLs
+const normalizeTitleForEpguides = (title) => {
+  // Remove common TV show suffixes that might not be in epguides URLs
+  let normalized = title.replace(/\(TV Series \d{4}(?:–\d{4})?\)/, '').trim();
+  normalized = normalized.replace(/\(US\)/, '').trim();
+
+  // Replace spaces with nothing and remove most special characters, preserve alphanumeric
+  normalized = normalized.replace(/[^a-zA-Z0-9]/g, '');
+
+  // Capitalize the first letter of each significant word, if necessary,
+  // but for epguides, it often seems to just concatenate words.
+  // Example: "Breaking Bad" -> "BreakingBad", "The Office (US)" -> "OfficeUS"
+  // For simplicity and to match observed patterns like "Survivor",
+  // we'll just remove spaces and non-alphanumeric, and let the first letter case be.
+  return normalized;
+};
+
+// Function to get the epguides.com URL for a TV show
+async function getEpguidesShowUrl(imdbTitle) {
+  const baseUrl = 'https://epguides.com/';
+  const normalizedTitle = normalizeTitleForEpguides(imdbTitle);
+  return `${baseUrl}${normalizedTitle}/`;
+}
 
 // PostgreSQL client setup
 const pool = new Pool({
@@ -20,10 +55,6 @@ const initDb = async () => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
-    // For development, you might want to clear tables on restart
-    // In production, you would not do this.
-    await client.query('DROP TABLE IF EXISTS media_genres, media_actors, episodes, seasons, genres, actors, media CASCADE');
 
     // Create new schema
     await client.query(`
@@ -70,6 +101,7 @@ const initDb = async () => {
         id SERIAL PRIMARY KEY,
         media_id INTEGER REFERENCES media(id) ON DELETE CASCADE,
         season_number INTEGER NOT NULL,
+        year INTEGER,
         is_watched BOOLEAN DEFAULT FALSE,
         UNIQUE (media_id, season_number)
       );
@@ -80,12 +112,13 @@ const initDb = async () => {
         season_id INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
         episode_number INTEGER NOT NULL,
         title TEXT,
+        air_date DATE,
         is_watched BOOLEAN DEFAULT FALSE
       );
     `);
 
     await client.query('COMMIT');
-    console.log('Database initialized successfully with new schema.');
+    console.log('Database initialized successfully.');
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Error initializing database', err.stack);
@@ -102,9 +135,9 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/media', async (req, res) => {
-  const { imdbUrl, type } = req.body;
-  if (!imdbUrl || !type) {
-    return res.status(400).json({ error: 'imdbUrl and type are required' });
+  const { imdbUrl } = req.body;
+  if (!imdbUrl) {
+    return res.status(400).json({ error: 'imdbUrl is required' });
   }
 
   const client = await pool.connect();
@@ -125,19 +158,42 @@ app.post('/api/media', async (req, res) => {
     });
     
     const $ = cheerio.load(data);
-    const jsonLdString = $('script[type="application/ld+json"]').html();
-    if (!jsonLdString) {
-      throw new Error('Could not find JSON-LD data in the page.');
-    }
-    const jsonData = JSON.parse(jsonLdString);
 
-    const title = jsonData.name;
-    const year = jsonData.datePublished ? parseInt(jsonData.datePublished.substring(0, 4), 10) : null;
-    const description = jsonData.description;
-    const poster_url = jsonData.image;
-    const rating = jsonData.aggregateRating ? jsonData.aggregateRating.ratingValue : null;
-    const genres = jsonData.genre || [];
-    const actors = (jsonData.actor || []).map((a) => a.name);
+    let title = he.decode($('h1[data-testid="hero-title-block__title"]').text().trim());
+    if (!title) {
+      const titleFromTag = he.decode($('title').text().trim());
+      const titleMatch = titleFromTag.match(/(.*)\s\(/);
+      if (titleMatch && titleMatch[1]) {
+        title = titleMatch[1];
+      }
+    }
+
+    if (!title) {
+      throw new Error('Could not scrape the title of the media.');
+    }
+
+    const yearText = $('a[href*="/releaseinfo"]').first().text().trim();
+    const year = yearText ? parseInt(yearText, 10) : null;
+    const description = he.decode($('span[data-testid="plot-l"]').text().trim());
+    const poster_url = $('.ipc-media--poster-l img').attr('src');
+    const ratingText = he.decode($('[data-testid="hero-rating-bar__aggregate-rating__score"] > span:first-child').text().trim());
+    const rating = ratingText.split('.').length > 2 ? ratingText.substring(0, 3) : ratingText.split('/')[0];
+    
+    const genres = [];
+    $('div[data-testid="genres"] a').each((i, el) => {
+      genres.push(he.decode($(el).text().trim()));
+    });
+
+    const actors = [];
+    $('a[data-testid="title-cast-item__actor"]').each((i, el) => {
+      actors.push(he.decode($(el).text().trim()));
+    });
+    
+    // The media type needs to be determined. We can infer this by looking for season/episode information.
+    // If the epguides scrape is successful, it's a TV show.
+    // For now, we'll try to guess based on the presence of episode information on the IMDB page.
+    const isTVShow = $('a[href*="episodes"]').length > 0;
+    const mediaType = isTVShow ? 'tv_show' : 'movie';
 
     await client.query('BEGIN');
 
@@ -145,7 +201,7 @@ app.post('/api/media', async (req, res) => {
       `INSERT INTO media (imdb_id, title, type, poster_url, description, year, rating)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [imdbId, title, type, poster_url, description, year, rating]
+      [imdbId, title, mediaType, poster_url, description, year, rating]
     );
     const newMedia = newMediaRes.rows[0];
 
@@ -174,58 +230,97 @@ app.post('/api/media', async (req, res) => {
       await client.query('INSERT INTO media_actors (media_id, actor_id) VALUES ($1, $2)', [newMedia.id, actorId]);
     }
 
-    if (type === 'tv_show') {
-      const episodesUrl = `${imdbUrl.split('?')[0].replace(/\/$/, "")}/episodes`;
-      const { data: seasonsPageData } = await axios.get(episodesUrl, {
-          headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-      });
-      const $s = cheerio.load(seasonsPageData);
-      const seasonOptions = $s('select#bySeason option');
+      if (mediaType === 'tv_show') {
+        try {
+          const epguidesShowUrl = await getEpguidesShowUrl(title);
+          console.log(`Attempting to scrape epguides.com for: ${epguidesShowUrl}`);
 
-      for (const option of seasonOptions) {
-        const seasonNumber = parseInt($s(option).attr('value') || '0', 10);
-        if (isNaN(seasonNumber) || seasonNumber < 1) continue;
-        
-        console.log(`Scraping season ${seasonNumber}...`);
-
-        const seasonRes = await client.query(
-          'INSERT INTO seasons (media_id, season_number) VALUES ($1, $2) RETURNING id',
-          [newMedia.id, seasonNumber]
-        );
-        const seasonId = seasonRes.rows[0].id;
-
-        const seasonEpisodesUrl = `${episodesUrl}?season=${seasonNumber}`;
-        const { data: episodePageData } = await axios.get(seasonEpisodesUrl, {
+          const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
             headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-        });
-        const $e = cheerio.load(episodePageData);
-        
-        const episodePromises = $e('div.list.detail.eplist div.list_item').map(async (i, el) => {
-          const episodeTitle = $e(el).find('a[itemprop="name"]').text().trim();
-          const metaText = $e(el).find('.eplist-metadata').text();
-          const episodeNumberMatch = metaText.match(/Ep(\d+)/);
-          const episodeNumber = episodeNumberMatch ? parseInt(episodeNumberMatch[1], 10) : i + 1;
+          });
+          
+          const $e = cheerio.load(epguidesPageData);
+          let currentSeason = 0;
+          let seasonsMap = new Map();
 
-          await client.query(
-            'INSERT INTO episodes (season_id, episode_number, title) VALUES ($1, $2, $3)',
-            [seasonId, episodeNumber, episodeTitle]
-          );
-        }).get();
-        await Promise.all(episodePromises);
+          const rows = [];
+          $e('tr').each((i, el) => {
+            rows.push($e(el));
+          });
+
+          for (const row of rows) {
+            const seasonHeader = row.find("td.bold[colspan='4']");
+
+            if (seasonHeader.length) {
+              const seasonMatch = seasonHeader.text().match(/Season (\d+)/);
+              if (seasonMatch) {
+                currentSeason = parseInt(seasonMatch[1], 10);
+              } else if (seasonHeader.text().includes('Specials')) {
+                currentSeason = 0; // Use 0 for specials
+              }
+            } else if (currentSeason >= 0) {
+              const columns = row.find('td');
+              if (columns.length === 4) {
+                const episodeNumberStr = columns.eq(1).text().trim();
+                const specialMatch = episodeNumberStr.match(/S(\d+)\..*-(\d+)/);
+                const regularMatch = episodeNumberStr.match(/(\d+)-(\d+)/);
+
+                let seasonForEpisode, episodeInSeason, airDateStr, titleFromFile, airDate;
+
+                if (specialMatch) {
+                  seasonForEpisode = parseInt(specialMatch[1], 10);
+                  episodeInSeason = parseInt(specialMatch[2], 10);
+                  airDateStr = columns.eq(2).text().trim();
+                  titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
+                  airDate = parseAirDate(airDateStr);
+                } else if (regularMatch) {
+                  seasonForEpisode = parseInt(regularMatch[1], 10);
+                  if (currentSeason !== 0 && seasonForEpisode !== currentSeason) continue;
+
+                  episodeInSeason = parseInt(regularMatch[2], 10);
+                  airDateStr = columns.eq(2).text().trim();
+                  titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
+                  airDate = parseAirDate(airDateStr);
+                } else {
+                  continue;
+                }
+
+                let seasonIdForEpisode = seasonsMap.get(seasonForEpisode);
+                if (!seasonIdForEpisode) {
+                  const yearForSeason = airDate ? airDate.getFullYear() : null;
+                  const seasonRes = await client.query(
+                    'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
+                    [newMedia.id, seasonForEpisode, yearForSeason]
+                  );
+                  seasonIdForEpisode = seasonRes.rows[0].id;
+                  seasonsMap.set(seasonForEpisode, seasonIdForEpisode);
+                  console.log(`Added Season ${seasonForEpisode} (${yearForSeason}) for ${title}`);
+                }
+                
+                await client.query(
+                  'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
+                  [seasonIdForEpisode, episodeInSeason, titleFromFile, airDate]
+                );
+                console.log(`  Added S${seasonForEpisode}E${episodeInSeason}: ${titleFromFile} (${airDate})`);
+              }
+            }
+          }
+        } catch (epguibesError) {
+          console.error("Failed to scrape episodes from epguides.com. The show will be added without episodes.", epguibesError.message);
+        }
       }
+
+      await client.query('COMMIT');
+      res.status(201).json(newMedia);
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Scraping or DB error:', error);
+      res.status(500).json({ error: 'Failed to scrape or save media.' });
+    } finally {
+      client.release();
     }
-
-    await client.query('COMMIT');
-    res.status(201).json(newMedia);
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Scraping or DB error:', error);
-    res.status(500).json({ error: 'Failed to scrape or save media.' });
-  } finally {
-    client.release();
-  }
-});
+  });
 
 app.get('/api/media/grouped', async (req, res) => {
   try {
@@ -243,20 +338,20 @@ app.get('/api/media/grouped', async (req, res) => {
         JOIN media m ON mg.media_id = m.id
         GROUP BY g.name
       ),
-      NewReleases AS (
+      RecentlyAdded AS (
         SELECT 
-          'New Releases' AS category, 
+          'Recently Added' AS category,
           json_agg(
             json_build_object(
               'id', m.id, 'title', m.title, 'type', m.type, 'poster_url', m.poster_url, 'year', m.year
-            ) ORDER BY m.year DESC, m.title
+            ) ORDER BY m.id DESC
           ) AS media
         FROM media m
-        WHERE m.year >= (EXTRACT(YEAR FROM NOW()) - 2)
+        WHERE m.id NOT IN (SELECT media_id FROM media_genres)
       )
       SELECT category, media FROM GenreGroups
       UNION ALL
-      SELECT category, media FROM NewReleases WHERE media IS NOT NULL;
+      SELECT category, media FROM RecentlyAdded WHERE media IS NOT NULL;
     `;
 
     const { rows } = await pool.query(query);
@@ -364,7 +459,219 @@ app.post('/api/episodes/:id/watched', async (req, res) => {
   }
 });
 
+app.post('/api/media/:id/rescrape', async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    const mediaRes = await client.query('SELECT * FROM media WHERE id = $1', [id]);
+    if (mediaRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Media not found' });
+    }
+    const media = mediaRes.rows[0];
+
+    if (media.type !== 'tv_show') {
+      return res.status(400).json({ error: 'Cannot rescrape a movie.' });
+    }
+
+    await client.query('BEGIN');
+    
+    // Clear existing episode data
+    await client.query(`
+      DELETE FROM episodes WHERE season_id IN (SELECT id FROM seasons WHERE media_id = $1)
+    `, [id]);
+    await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
+
+    const epguidesShowUrl = await getEpguidesShowUrl(media.title);
+    const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
+      headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+    });
+    
+    const $e = cheerio.load(epguidesPageData);
+    let currentSeason = 0;
+    let seasonsMap = new Map();
+
+    const rows = [];
+    $e('tr').each((i, el) => {
+      rows.push($e(el));
+    });
+
+    for (const row of rows) {
+      const seasonHeader = row.find("td.bold[colspan='4']");
+
+      if (seasonHeader.length) {
+        const seasonMatch = seasonHeader.text().match(/Season (\d+)/);
+        if (seasonMatch) {
+          currentSeason = parseInt(seasonMatch[1], 10);
+        } else if (seasonHeader.text().includes('Specials')) {
+          currentSeason = 0; // Use 0 for specials
+        }
+      } else if (currentSeason >= 0) {
+        const columns = row.find('td');
+        if (columns.length === 4) {
+          const episodeNumberStr = columns.eq(1).text().trim();
+          const specialMatch = episodeNumberStr.match(/S(\d+)\..*-(\d+)/);
+          const regularMatch = episodeNumberStr.match(/(\d+)-(\d+)/);
+
+          let seasonForEpisode, episodeInSeason, airDateStr, titleFromFile, airDate;
+
+          if (specialMatch) {
+            seasonForEpisode = parseInt(specialMatch[1], 10);
+            episodeInSeason = parseInt(specialMatch[2], 10);
+            airDateStr = columns.eq(2).text().trim();
+            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
+            airDate = parseAirDate(airDateStr);
+          } else if (regularMatch) {
+            seasonForEpisode = parseInt(regularMatch[1], 10);
+            if (currentSeason !== 0 && seasonForEpisode !== currentSeason) continue;
+
+            episodeInSeason = parseInt(regularMatch[2], 10);
+            airDateStr = columns.eq(2).text().trim();
+            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
+            airDate = parseAirDate(airDateStr);
+          } else {
+            continue;
+          }
+
+          let seasonIdForEpisode = seasonsMap.get(seasonForEpisode);
+          if (!seasonIdForEpisode) {
+            const yearForSeason = airDate ? airDate.getFullYear() : null;
+            const seasonRes = await client.query(
+              'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
+              [id, seasonForEpisode, yearForSeason]
+            );
+            seasonIdForEpisode = seasonRes.rows[0].id;
+            seasonsMap.set(seasonForEpisode, seasonIdForEpisode);
+            console.log(`Added Season ${seasonForEpisode} (${yearForSeason}) for ${media.title}`);
+          }
+          
+          await client.query(
+            'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
+            [seasonIdForEpisode, episodeInSeason, titleFromFile, airDate]
+          );
+          console.log(`  Added S${seasonForEpisode}E${episodeInSeason}: ${titleFromFile} (${airDate})`);
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    res.sendStatus(204);
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Re-scraping error:', error);
+    res.status(500).json({ error: 'Failed to re-scrape episodes.' });
+  } finally {
+    client.release();
+  }
+});
+
 app.listen(port, () => {
   console.log(`Backend listening at http://localhost:${port}`);
   initDb();
+});
+
+app.post('/api/media/:id/rescrape', async (req, res) => {
+  const { id } = req.params;
+  const client = await pool.connect();
+  try {
+    const mediaRes = await client.query('SELECT * FROM media WHERE id = $1', [id]);
+    if (mediaRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Media not found' });
+    }
+    const media = mediaRes.rows[0];
+
+    if (media.type !== 'tv_show') {
+      return res.status(400).json({ error: 'Cannot rescrape a movie.' });
+    }
+
+    await client.query('BEGIN');
+    
+    // Clear existing episode data
+    await client.query(`
+      DELETE FROM episodes WHERE season_id IN (SELECT id FROM seasons WHERE media_id = $1)
+    `, [id]);
+    await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
+
+    const epguidesShowUrl = await getEpguidesShowUrl(media.title);
+    const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
+      headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+    });
+    
+    const $e = cheerio.load(epguidesPageData);
+    let currentSeason = 0;
+    let seasonsMap = new Map();
+
+    const rows = [];
+    $e('tr').each((i, el) => {
+      rows.push($e(el));
+    });
+
+    for (const row of rows) {
+      const seasonHeader = row.find("td.bold[colspan='4']");
+
+      if (seasonHeader.length) {
+        const seasonMatch = seasonHeader.text().match(/Season (\d+)/);
+        if (seasonMatch) {
+          currentSeason = parseInt(seasonMatch[1], 10);
+        } else if (seasonHeader.text().includes('Specials')) {
+          currentSeason = 0; // Use 0 for specials
+        }
+      } else if (currentSeason >= 0) {
+        const columns = row.find('td');
+        if (columns.length === 4) {
+          const episodeNumberStr = columns.eq(1).text().trim();
+          const specialMatch = episodeNumberStr.match(/S(\d+)\..*-(\d+)/);
+          const regularMatch = episodeNumberStr.match(/(\d+)-(\d+)/);
+
+          let seasonForEpisode, episodeInSeason, airDateStr, titleFromFile, airDate;
+
+          if (specialMatch) {
+            seasonForEpisode = parseInt(specialMatch[1], 10);
+            episodeInSeason = parseInt(specialMatch[2], 10);
+            airDateStr = columns.eq(2).text().trim();
+            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
+            airDate = parseAirDate(airDateStr);
+          } else if (regularMatch) {
+            seasonForEpisode = parseInt(regularMatch[1], 10);
+            if (currentSeason !== 0 && seasonForEpisode !== currentSeason) continue;
+
+            episodeInSeason = parseInt(regularMatch[2], 10);
+            airDateStr = columns.eq(2).text().trim();
+            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
+            airDate = parseAirDate(airDateStr);
+          } else {
+            continue;
+          }
+
+          let seasonIdForEpisode = seasonsMap.get(seasonForEpisode);
+          if (!seasonIdForEpisode) {
+            const yearForSeason = airDate ? airDate.getFullYear() : null;
+            const seasonRes = await client.query(
+              'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
+              [id, seasonForEpisode, yearForSeason]
+            );
+            seasonIdForEpisode = seasonRes.rows[0].id;
+            seasonsMap.set(seasonForEpisode, seasonIdForEpisode);
+            console.log(`Added Season ${seasonForEpisode} (${yearForSeason}) for ${media.title}`);
+          }
+          
+          await client.query(
+            'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
+            [seasonIdForEpisode, episodeInSeason, titleFromFile, airDate]
+          );
+          console.log(`  Added S${seasonForEpisode}E${episodeInSeason}: ${titleFromFile} (${airDate})`);
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    res.sendStatus(204);
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Re-scraping error:', error);
+    res.status(500).json({ error: 'Failed to re-scrape episodes.' });
+  } finally {
+    client.release();
+  }
 });
