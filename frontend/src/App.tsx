@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import MediaDetail from './components/MediaDetail';
 import MediaRow from './components/MediaRow';
+import TagsModal from './components/TagsModal';
 
 interface Media {
   id: number;
@@ -15,16 +16,17 @@ type GroupedMedia = Record<string, Media[]>;
 
 function App() {
   const [groupedMedia, setGroupedMedia] = useState<GroupedMedia>({});
-  const [error, setError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
   const [imdbUrl, setImdbUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [addMediaError, setAddMediaError] = useState(''); // New state for modal-specific error
   const [activeTab, setActiveTab] = useState<'tv_show' | 'movie'>('tv_show');
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null);
 
   const fetchMedia = async () => {
     try {
-      setError('');
+      setAddMediaError(''); // Clear any modal errors when fetching main media
       const res = await fetch('http://localhost:3000/api/media/grouped');
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
@@ -32,7 +34,7 @@ function App() {
       const data = await res.json();
       setGroupedMedia(data);
     } catch (err: any) {
-      setError('Failed to fetch media from the backend.');
+      setAddMediaError('Failed to fetch media from the backend.'); // Use modal error state for this
       console.error(err);
     }
   };
@@ -42,19 +44,30 @@ function App() {
   }, []);
 
   const openModal = () => {
+    setAddMediaError(''); // Clear error when opening modal
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
     setImdbUrl('');
+    setAddMediaError(''); // Clear error when closing modal
+  };
+
+  const openTagsModal = () => {
+    setIsTagsModalOpen(true);
+  };
+
+  const closeTagsModal = () => {
+    setIsTagsModalOpen(false);
+    fetchMedia();
   };
 
   const handleAddMedia = async (e: React.FormEvent) => {
     e.preventDefault();
 
     setIsLoading(true);
-    setError('');
+    setAddMediaError(''); // Clear previous error on new attempt
 
     console.log('Attempting to add media with IMDB URL:', imdbUrl);
 
@@ -80,7 +93,7 @@ function App() {
       setActiveTab(addedMedia.type); // Switch to the correct tab
       closeModal();
     } catch (err: any) {
-      setError(err.message);
+      setAddMediaError(err.message); // Set modal-specific error
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -93,6 +106,7 @@ function App() {
 
   const handleCloseDetail = () => {
     setSelectedMediaId(null);
+    fetchMedia();
   };
 
   if (selectedMediaId) {
@@ -116,12 +130,10 @@ function App() {
           <button onClick={() => setActiveTab('movie')} className={activeTab === 'movie' ? 'active' : ''}>Movies</button>
         </nav>
         <div className="header-actions">
+          <button onClick={openTagsModal}>Manage Tags</button>
           <button onClick={openModal}>Add Media</button>
         </div>
       </header>
-
-      {error && <p className="error-message">{error}</p>}
-      
       <main>
         {filteredCategories.map(category => {
           const itemsForCategory = groupedMedia[category].filter(item => item.type === activeTab);
@@ -149,6 +161,7 @@ function App() {
                 required
                 disabled={isLoading}
               />
+              {addMediaError && <p className="error-message">{addMediaError}</p>}
               <div className="modal-actions">
                 <button type="submit" disabled={isLoading}>
                   {isLoading ? 'Adding...' : 'Add'}
@@ -160,6 +173,10 @@ function App() {
             </form>
           </div>
         </div>
+      )}
+
+      {isTagsModalOpen && (
+        <TagsModal onClose={closeTagsModal} />
       )}
     </div>
   );

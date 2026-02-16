@@ -67,7 +67,8 @@ const initDb = async () => {
         description TEXT,
         year INTEGER,
         rating VARCHAR(10),
-        is_watched BOOLEAN DEFAULT FALSE
+        is_watched BOOLEAN DEFAULT FALSE,
+        epguides_url TEXT
       );
     `);
     await client.query(`
@@ -114,6 +115,20 @@ const initDb = async () => {
         title TEXT,
         air_date DATE,
         is_watched BOOLEAN DEFAULT FALSE
+      );
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tags (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) UNIQUE NOT NULL,
+        sort_order INTEGER
+      );
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS media_tags (
+        media_id INTEGER REFERENCES media(id) ON DELETE CASCADE,
+        tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+        PRIMARY KEY (media_id, tag_id)
       );
     `);
 
@@ -325,39 +340,62 @@ app.post('/api/media', async (req, res) => {
 app.get('/api/media/grouped', async (req, res) => {
   try {
     const query = `
-      WITH GenreGroups AS (
+      SELECT category, media, sort_order, type
+      FROM (
         SELECT 
-          g.name AS category, 
+          t.name AS category,
+          t.sort_order,
+          1 AS type,
           json_agg(
             json_build_object(
-              'id', m.id, 'title', m.title, 'type', m.type, 'poster_url', m.poster_url, 'year', m.year
-            ) ORDER BY m.year DESC, m.title
+              'id', m.id, 'title', m.title, 'type', m.type, 'poster_url', m.poster_url, 'year', m.year, 'rating', m.rating
+            ) ORDER BY m.rating DESC, m.title
+          ) AS media
+        FROM tags t
+        JOIN media_tags mt ON t.id = mt.tag_id
+        JOIN media m ON mt.media_id = m.id
+        GROUP BY t.id, t.name, t.sort_order
+
+        UNION ALL
+
+        SELECT 
+          g.name AS category, 
+          NULL AS sort_order,
+          2 AS type,
+          json_agg(
+            json_build_object(
+              'id', m.id, 'title', m.title, 'type', m.type, 'poster_url', m.poster_url, 'year', m.year, 'rating', m.rating
+            ) ORDER BY m.rating DESC, m.title
           ) AS media
         FROM genres g
         JOIN media_genres mg ON g.id = mg.genre_id
         JOIN media m ON mg.media_id = m.id
+        WHERE m.id NOT IN (SELECT media_id FROM media_tags)
         GROUP BY g.name
-      ),
-      RecentlyAdded AS (
+
+        UNION ALL
+
         SELECT 
-          'Recently Added' AS category,
+          'Other' AS category,
+          NULL AS sort_order,
+          3 AS type,
           json_agg(
             json_build_object(
-              'id', m.id, 'title', m.title, 'type', m.type, 'poster_url', m.poster_url, 'year', m.year
-            ) ORDER BY m.id DESC
+              'id', m.id, 'title', m.title, 'type', m.type, 'poster_url', m.poster_url, 'year', m.year, 'rating', m.rating
+            ) ORDER BY m.rating DESC, m.title
           ) AS media
         FROM media m
-        WHERE m.id NOT IN (SELECT media_id FROM media_genres)
-      )
-      SELECT category, media FROM GenreGroups
-      UNION ALL
-      SELECT category, media FROM RecentlyAdded WHERE media IS NOT NULL;
+        WHERE m.id NOT IN (SELECT media_id FROM media_tags)
+          AND m.id NOT IN (SELECT media_id FROM media_genres)
+      ) AS result
+      ORDER BY type, sort_order, category;
     `;
 
     const { rows } = await pool.query(query);
     const grouped = rows.reduce((acc, row) => {
-      // The JSON aggregation from postgres is already sorted.
-      acc[row.category] = row.media || [];
+      if (row.media) {
+        acc[row.category] = row.media;
+      }
       return acc;
     }, {});
 
@@ -392,6 +430,14 @@ app.get('/api/media/:id', async (req, res) => {
     `, [id]);
     media.actors = actorsRes.rows.map(r => r.name);
 
+    const tagsRes = await pool.query(`
+      SELECT t.id, t.name FROM tags t
+      JOIN media_tags mt ON t.id = mt.tag_id
+      WHERE mt.media_id = $1
+      ORDER BY t.sort_order
+    `, [id]);
+    media.tags = tagsRes.rows;
+
     if (media.type === 'tv_show') {
       const seasonsRes = await pool.query('SELECT * FROM seasons WHERE media_id = $1 ORDER BY season_number', [id]);
       const seasons = seasonsRes.rows;
@@ -406,6 +452,92 @@ app.get('/api/media/:id', async (req, res) => {
     res.json(media);
   } catch (err) {
     console.error(`Error fetching media with id ${id}`, err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.delete('/api/media/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM media WHERE id = $1', [id]);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error(`Error deleting media with id ${id}`, err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+// Tag Management Endpoints
+app.get('/api/tags', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM tags ORDER BY sort_order');
+    res.json(rows);
+  } catch (err) {
+    console.error('Error getting tags', err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.post('/api/tags', async (req, res) => {
+  const { name } = req.body;
+  try {
+    const { rows } = await pool.query('INSERT INTO tags (name) VALUES ($1) RETURNING *', [name]);
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('Error creating tag', err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.put('/api/tags', async (req, res) => {
+  const { tags } = req.body;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const tag of tags) {
+      await client.query('UPDATE tags SET sort_order = $1 WHERE id = $2', [tag.sort_order, tag.id]);
+    }
+    await client.query('COMMIT');
+    res.sendStatus(204);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('Error updating tag order', err.stack);
+    res.status(500).send('Server Error');
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/tags/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM tags WHERE id = $1', [id]);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Error deleting tag', err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.post('/api/media/:id/tags', async (req, res) => {
+  const { id } = req.params;
+  const { tagId } = req.body;
+  try {
+    await pool.query('INSERT INTO media_tags (media_id, tag_id) VALUES ($1, $2)', [id, tagId]);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Error adding tag to media', err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.delete('/api/media/:id/tags/:tagId', async (req, res) => {
+  const { id, tagId } = req.params;
+  try {
+    await pool.query('DELETE FROM media_tags WHERE media_id = $1 AND tag_id = $2', [id, tagId]);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Error removing tag from media', err.stack);
     res.status(500).send('Server Error');
   }
 });
@@ -459,8 +591,10 @@ app.post('/api/episodes/:id/watched', async (req, res) => {
   }
 });
 
+
 app.post('/api/media/:id/rescrape', async (req, res) => {
   const { id } = req.params;
+  const { epguidesUrl: customUrl } = req.body;
   const client = await pool.connect();
   try {
     const mediaRes = await client.query('SELECT * FROM media WHERE id = $1', [id]);
@@ -475,112 +609,15 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
 
     await client.query('BEGIN');
     
-    // Clear existing episode data
-    await client.query(`
-      DELETE FROM episodes WHERE season_id IN (SELECT id FROM seasons WHERE media_id = $1)
-    `, [id]);
-    await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
-
-    const epguidesShowUrl = await getEpguidesShowUrl(media.title);
-    const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
-      headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-    });
-    
-    const $e = cheerio.load(epguidesPageData);
-    let currentSeason = 0;
-    let seasonsMap = new Map();
-
-    const rows = [];
-    $e('tr').each((i, el) => {
-      rows.push($e(el));
-    });
-
-    for (const row of rows) {
-      const seasonHeader = row.find("td.bold[colspan='4']");
-
-      if (seasonHeader.length) {
-        const seasonMatch = seasonHeader.text().match(/Season (\d+)/);
-        if (seasonMatch) {
-          currentSeason = parseInt(seasonMatch[1], 10);
-        } else if (seasonHeader.text().includes('Specials')) {
-          currentSeason = 0; // Use 0 for specials
-        }
-      } else if (currentSeason >= 0) {
-        const columns = row.find('td');
-        if (columns.length === 4) {
-          const episodeNumberStr = columns.eq(1).text().trim();
-          const specialMatch = episodeNumberStr.match(/S(\d+)\..*-(\d+)/);
-          const regularMatch = episodeNumberStr.match(/(\d+)-(\d+)/);
-
-          let seasonForEpisode, episodeInSeason, airDateStr, titleFromFile, airDate;
-
-          if (specialMatch) {
-            seasonForEpisode = parseInt(specialMatch[1], 10);
-            episodeInSeason = parseInt(specialMatch[2], 10);
-            airDateStr = columns.eq(2).text().trim();
-            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
-            airDate = parseAirDate(airDateStr);
-          } else if (regularMatch) {
-            seasonForEpisode = parseInt(regularMatch[1], 10);
-            if (currentSeason !== 0 && seasonForEpisode !== currentSeason) continue;
-
-            episodeInSeason = parseInt(regularMatch[2], 10);
-            airDateStr = columns.eq(2).text().trim();
-            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
-            airDate = parseAirDate(airDateStr);
-          } else {
-            continue;
-          }
-
-          let seasonIdForEpisode = seasonsMap.get(seasonForEpisode);
-          if (!seasonIdForEpisode) {
-            const yearForSeason = airDate ? airDate.getFullYear() : null;
-            const seasonRes = await client.query(
-              'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
-              [id, seasonForEpisode, yearForSeason]
-            );
-            seasonIdForEpisode = seasonRes.rows[0].id;
-            seasonsMap.set(seasonForEpisode, seasonIdForEpisode);
-            console.log(`Added Season ${seasonForEpisode} (${yearForSeason}) for ${media.title}`);
-          }
-          
-          await client.query(
-            'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
-            [seasonIdForEpisode, episodeInSeason, titleFromFile, airDate]
-          );
-          console.log(`  Added S${seasonForEpisode}E${episodeInSeason}: ${titleFromFile} (${airDate})`);
-        }
-      }
+    let epguidesShowUrl = customUrl || media.epguides_url;
+    if (!epguidesShowUrl) {
+      epguidesShowUrl = await getEpguidesShowUrl(media.title);
+      await client.query('UPDATE media SET epguides_url = $1 WHERE id = $2', [epguidesShowUrl, id]);
+    } else if (customUrl) {
+      // If a custom URL is provided, update the stored URL
+      await client.query('UPDATE media SET epguides_url = $1 WHERE id = $2', [customUrl, id]);
     }
 
-    await client.query('COMMIT');
-    res.sendStatus(204);
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Re-scraping error:', error);
-    res.status(500).json({ error: 'Failed to re-scrape episodes.' });
-  } finally {
-    client.release();
-  }
-});
-
-app.post('/api/media/:id/rescrape', async (req, res) => {
-  const { id } = req.params;
-  const client = await pool.connect();
-  try {
-    const mediaRes = await client.query('SELECT * FROM media WHERE id = $1', [id]);
-    if (mediaRes.rowCount === 0) {
-      return res.status(404).json({ error: 'Media not found' });
-    }
-    const media = mediaRes.rows[0];
-
-    if (media.type !== 'tv_show') {
-      return res.status(400).json({ error: 'Cannot rescrape a movie.' });
-    }
-
-    await client.query('BEGIN');
-    
     // Get existing watched episodes
     const watchedEpisodesRes = await client.query(`
       SELECT s.season_number, e.episode_number
@@ -596,7 +633,6 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
     `, [id]);
     await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
 
-    const epguidesShowUrl = await getEpguidesShowUrl(media.title);
     const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
       headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
     });
@@ -686,108 +722,3 @@ app.listen(port, () => {
   initDb();
 });
 
-app.post('/api/media/:id/rescrape', async (req, res) => {
-  const { id } = req.params;
-  const client = await pool.connect();
-  try {
-    const mediaRes = await client.query('SELECT * FROM media WHERE id = $1', [id]);
-    if (mediaRes.rowCount === 0) {
-      return res.status(404).json({ error: 'Media not found' });
-    }
-    const media = mediaRes.rows[0];
-
-    if (media.type !== 'tv_show') {
-      return res.status(400).json({ error: 'Cannot rescrape a movie.' });
-    }
-
-    await client.query('BEGIN');
-    
-    // Clear existing episode data
-    await client.query(`
-      DELETE FROM episodes WHERE season_id IN (SELECT id FROM seasons WHERE media_id = $1)
-    `, [id]);
-    await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
-
-    const epguidesShowUrl = await getEpguidesShowUrl(media.title);
-    const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
-      headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-    });
-    
-    const $e = cheerio.load(epguidesPageData);
-    let currentSeason = 0;
-    let seasonsMap = new Map();
-
-    const rows = [];
-    $e('tr').each((i, el) => {
-      rows.push($e(el));
-    });
-
-    for (const row of rows) {
-      const seasonHeader = row.find("td.bold[colspan='4']");
-
-      if (seasonHeader.length) {
-        const seasonMatch = seasonHeader.text().match(/Season (\d+)/);
-        if (seasonMatch) {
-          currentSeason = parseInt(seasonMatch[1], 10);
-        } else if (seasonHeader.text().includes('Specials')) {
-          currentSeason = 0; // Use 0 for specials
-        }
-      } else if (currentSeason >= 0) {
-        const columns = row.find('td');
-        if (columns.length === 4) {
-          const episodeNumberStr = columns.eq(1).text().trim();
-          const specialMatch = episodeNumberStr.match(/S(\d+)\..*-(\d+)/);
-          const regularMatch = episodeNumberStr.match(/(\d+)-(\d+)/);
-
-          let seasonForEpisode, episodeInSeason, airDateStr, titleFromFile, airDate;
-
-          if (specialMatch) {
-            seasonForEpisode = parseInt(specialMatch[1], 10);
-            episodeInSeason = parseInt(specialMatch[2], 10);
-            airDateStr = columns.eq(2).text().trim();
-            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
-            airDate = parseAirDate(airDateStr);
-          } else if (regularMatch) {
-            seasonForEpisode = parseInt(regularMatch[1], 10);
-            if (currentSeason !== 0 && seasonForEpisode !== currentSeason) continue;
-
-            episodeInSeason = parseInt(regularMatch[2], 10);
-            airDateStr = columns.eq(2).text().trim();
-            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
-            airDate = parseAirDate(airDateStr);
-          } else {
-            continue;
-          }
-
-          let seasonIdForEpisode = seasonsMap.get(seasonForEpisode);
-          if (!seasonIdForEpisode) {
-            const yearForSeason = airDate ? airDate.getFullYear() : null;
-            const seasonRes = await client.query(
-              'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
-              [id, seasonForEpisode, yearForSeason]
-            );
-            seasonIdForEpisode = seasonRes.rows[0].id;
-            seasonsMap.set(seasonForEpisode, seasonIdForEpisode);
-            console.log(`Added Season ${seasonForEpisode} (${yearForSeason}) for ${media.title}`);
-          }
-          
-          await client.query(
-            'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
-            [seasonIdForEpisode, episodeInSeason, titleFromFile, airDate]
-          );
-          console.log(`  Added S${seasonForEpisode}E${episodeInSeason}: ${titleFromFile} (${airDate})`);
-        }
-      }
-    }
-
-    await client.query('COMMIT');
-    res.sendStatus(204);
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Re-scraping error:', error);
-    res.status(500).json({ error: 'Failed to re-scrape episodes.' });
-  } finally {
-    client.release();
-  }
-});

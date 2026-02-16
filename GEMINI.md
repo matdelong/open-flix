@@ -1,10 +1,11 @@
+
 # Open Flix - Project Context
 
-## 1. Project Goal
+## Project Goal
 
 The primary goal is to create "Open Flix," a web application with a user interface similar to Netflix. It is intended to be a personal dashboard for tracking movies and TV shows the user wants to watch across various streaming platforms.
 
-## 2. Technology Stack
+## Technology Stack
 
 This is a full-stack monorepo, containerized with Docker.
 
@@ -13,14 +14,14 @@ This is a full-stack monorepo, containerized with Docker.
 *   **Database:** PostgreSQL.
 *   **Orchestration:** Docker Compose.
 
-## 3. Project Structure
+## Project Structure
 
 *   `/`: The project root contains the `docker-compose.yml` file and this context file.
 *   `/frontend`: Contains the React application, including a `components` directory for `MediaCard`, `MediaDetail`, and `MediaRow`.
 *   `/backend`: Contains the Node.js/Express application.
 *   `postgres_data`: A Docker volume used for persisting PostgreSQL data.
 
-## 4. Current Status & Key Features
+## Current Status & Key Features
 
 The application is a functional proof-of-concept with a robust backend and a dynamic frontend.
 
@@ -61,3 +62,19 @@ The application is a functional proof-of-concept with a robust backend and a dyn
 4.  To see the container logs, you can run `docker-compose logs -f` or `docker-compose logs backend`.
 
 This command will build the images, start all containers, and handle the connections between them. The database readiness is managed by a healthcheck in the docker-compose file.
+
+# Gemini Instructions
+
+This document provides instructions for Gemini, the AI assistant, to follow when working on this project.
+
+## Project Context
+
+For a detailed overview of the project, including the goal, technology stack, and how to run the application, please refer to the [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md) file.
+
+## Interaction Guidelines
+
+When I (the user) make a request, please adhere to the following guidelines:
+
+1.  **Ask for Clarification:** If a request is ambiguous or you need more context to proceed, please ask questions to clarify the requirements.
+2.  **Notify on Completion:** When you have completed a task, please notify me that it is done and ask me to test the changes.
+3.  **Await Feedback:** I will manually test the changes and let you know if any further modifications are needed. Please wait for my feedback before proceeding with any additional tasks.

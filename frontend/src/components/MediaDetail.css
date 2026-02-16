@@ -78,6 +78,36 @@
   font-size: 0.9rem;
 }
 
+.detail-tags {
+  margin: 1rem 0;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  background: #007bff;
+  color: #fff;
+  padding: 0.3rem 0.8rem;
+  border-radius: 15px;
+  margin-right: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.tag-chip button {
+  background: none;
+  border: none;
+  color: #fff;
+  margin-left: 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0;
+  line-height: 1;
+}
+
+.add-tag-container {
+  margin-top: 1rem;
+}
+
 .detail-description {
   line-height: 1.6;
 }
@@ -138,4 +168,14 @@
 
 .episode-list input[type="checkbox"] {
   margin-right: 1rem;
+}
+
+.remove-button {
+  background-color: #e50914;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  border-radius: 4px;
+  margin-top: 1rem;
 }
