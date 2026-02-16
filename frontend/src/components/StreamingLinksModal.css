@@ -1,0 +1,22 @@
+.streaming-links-list {
+  margin-bottom: 1rem;
+}
+
+.streaming-link-item {
+  display: flex;
+  margin-bottom: 0.5rem;
+}
+
+.streaming-link-item input {
+  flex-grow: 1;
+  margin-right: 0.5rem;
+}
+
+.add-streaming-link {
+  display: flex;
+}
+
+.add-streaming-link input {
+  flex-grow: 1;
+  margin-right: 0.5rem;
+}

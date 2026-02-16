@@ -87,6 +87,8 @@
   background-color: #333;
   color: white;
   font-size: 1rem;
+  width: 380px;
+  margin-right: 10px;
 }
 
 .modal-actions {

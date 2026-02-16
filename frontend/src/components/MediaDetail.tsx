@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './MediaDetail.css';
+import StreamingLinksModal from './StreamingLinksModal';
 
 // Define more detailed types to match the backend response
 interface Episode {
@@ -18,6 +19,12 @@ interface Season {
   episodes: Episode[];
 }
 
+interface StreamingLink {
+  id: number;
+  url: string;
+  platform: string;
+}
+
 interface MediaDetailData {
   id: number;
   imdb_id: string;
@@ -32,6 +39,7 @@ interface MediaDetailData {
   genres: string[];
   actors: string[];
   tags: { id: number; name: string }[];
+  streaming_links: StreamingLink[];
   seasons?: Season[];
 }
 
@@ -50,24 +58,25 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isStreamingLinksModalOpen, setIsStreamingLinksModalOpen] = useState(false);
+
+  const fetchDetails = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`http://localhost:3000/api/media/${mediaId}`);
+      if (!res.ok) {
+        throw new Error('Failed to fetch media details.');
+      }
+      const data = await res.json();
+      setMedia(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchDetails = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`http://localhost:3000/api/media/${mediaId}`);
-        if (!res.ok) {
-          throw new Error('Failed to fetch media details.');
-        }
-        const data = await res.json();
-        setMedia(data);
-      } catch (err: any) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     const fetchTags = async () => {
       try {
         const res = await fetch('http://localhost:3000/api/tags');
@@ -220,6 +229,17 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
     }
   };
 
+  const getPlatformIcon = (platform: string) => {
+    switch (platform) {
+      case 'Netflix': return 'N';
+      case 'Amazon Prime Video': return 'A';
+      case 'Plex': return 'P';
+      case 'Disney+': return 'D+';
+      case 'BBC IPlayer': return 'BBC';
+      default: return '🔗';
+    }
+  };
+
   if (loading) return <div className="detail-loading">Loading...</div>;
   if (error) return <div className="detail-error">Error: {error}</div>;
   if (!media) return null;
@@ -255,6 +275,14 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
                   <option key={tag.id} value={tag.id}>{tag.name}</option>
                 ))}
               </select>
+            </div>
+            <div className="streaming-links">
+              {media && media.streaming_links && media.streaming_links.map(link => (
+                <a href={link.url} key={link.id} target="_blank" rel="noopener noreferrer" className="streaming-link-icon">
+                  {getPlatformIcon(link.platform)}
+                </a>
+              ))}
+              <button onClick={() => setIsStreamingLinksModalOpen(true)} className="streaming-link-button"></button>
             </div>
             <p className="detail-description">{media.description}</p>
             {media.type === 'movie' && (
@@ -318,6 +346,14 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
           </>
         )}
       </div>
+      {isStreamingLinksModalOpen && (
+        <StreamingLinksModal
+          mediaId={media.id}
+          links={media.streaming_links}
+          onClose={() => setIsStreamingLinksModalOpen(false)}
+          onSave={fetchDetails}
+        />
+      )}
     </div>
   );
 };

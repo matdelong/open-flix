@@ -131,6 +131,14 @@ const initDb = async () => {
         PRIMARY KEY (media_id, tag_id)
       );
     `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS streaming_links (
+        id SERIAL PRIMARY KEY,
+        media_id INTEGER REFERENCES media(id) ON DELETE CASCADE,
+        url TEXT NOT NULL,
+        platform VARCHAR(100) NOT NULL
+      );
+    `);
 
     await client.query('COMMIT');
     console.log('Database initialized successfully.');
@@ -438,6 +446,9 @@ app.get('/api/media/:id', async (req, res) => {
     `, [id]);
     media.tags = tagsRes.rows;
 
+    const streamingLinksRes = await pool.query('SELECT * FROM streaming_links WHERE media_id = $1', [id]);
+    media.streaming_links = streamingLinksRes.rows;
+
     if (media.type === 'tv_show') {
       const seasonsRes = await pool.query('SELECT * FROM seasons WHERE media_id = $1 ORDER BY season_number', [id]);
       const seasons = seasonsRes.rows;
@@ -538,6 +549,59 @@ app.delete('/api/media/:id/tags/:tagId', async (req, res) => {
     res.sendStatus(204);
   } catch (err) {
     console.error('Error removing tag from media', err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+// Streaming Link Management Endpoints
+const detectPlatform = (url) => {
+  if (url.includes('netflix.com')) return 'Netflix';
+  if (url.includes('amazon.com') || url.includes('a.co')) return 'Amazon Prime Video';
+  if (url.includes('plex.tv')) return 'Plex';
+  if (url.includes('disneyplus.com')) return 'Disney+';
+  if (url.includes('bbc.co.uk/iplayer')) return 'BBC IPlayer';
+  return 'Other';
+};
+
+app.post('/api/media/:id/streaming-links', async (req, res) => {
+  const { id } = req.params;
+  const { url } = req.body;
+  const platform = detectPlatform(url);
+  try {
+    const { rows } = await pool.query(
+      'INSERT INTO streaming_links (media_id, url, platform) VALUES ($1, $2, $3) RETURNING *',
+      [id, url, platform]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('Error creating streaming link', err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.put('/api/media/:id/streaming-links/:linkId', async (req, res) => {
+  const { linkId } = req.params;
+  const { url } = req.body;
+  const platform = detectPlatform(url);
+  try {
+    const { rows } = await pool.query(
+      'UPDATE streaming_links SET url = $1, platform = $2 WHERE id = $3 RETURNING *',
+      [url, platform, linkId]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('Error updating streaming link', err.stack);
+    res.status(500).send('Server Error');
+  }
+});
+
+app.delete('/api/media/:id/streaming-links/:linkId', async (req, res) => {
+  const { linkId } = req.params;
+  try {
+    await pool.query('DELETE FROM streaming_links WHERE id = $1', [linkId]);
+    res.sendStatus(204);
+  } catch (err) {
+    console.error('Error deleting streaming link', err.stack);
     res.status(500).send('Server Error');
   }
 });
