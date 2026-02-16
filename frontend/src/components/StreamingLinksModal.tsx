@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface StreamingLink {
   id: number;
@@ -16,6 +16,21 @@ interface StreamingLinksModalProps {
 const StreamingLinksModal: React.FC<StreamingLinksModalProps> = ({ mediaId, links, onClose, onSave }) => {
   const [newLink, setNewLink] = useState('');
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [onClose]);
+
   const handleAddLink = async () => {
     if (!newLink.trim()) return;
 
@@ -27,6 +42,7 @@ const StreamingLinksModal: React.FC<StreamingLinksModalProps> = ({ mediaId, link
     setNewLink('');
     onSave();
   };
+
 
   const handleUpdateLink = async (linkId: number, url: string) => {
     await fetch(`http://localhost:3000/api/media/${mediaId}/streaming-links/${linkId}`, {

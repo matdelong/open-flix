@@ -236,6 +236,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
       case 'Plex': return 'P';
       case 'Disney+': return 'D+';
       case 'BBC IPlayer': return 'BBC';
+      case 'Channel 4': return '4';
       default: return '🔗';
     }
   };

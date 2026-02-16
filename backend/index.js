@@ -555,11 +555,12 @@ app.delete('/api/media/:id/tags/:tagId', async (req, res) => {
 
 // Streaming Link Management Endpoints
 const detectPlatform = (url) => {
-  if (url.includes('netflix.com')) return 'Netflix';
-  if (url.includes('amazon.com') || url.includes('a.co')) return 'Amazon Prime Video';
-  if (url.includes('plex.tv')) return 'Plex';
+  if (url.includes('netflix')) return 'Netflix';
+  if (url.includes('amazon') || url.includes('a.co')) return 'Amazon Prime Video';
+  if (url.includes('plex.tv') || url.includes('192.168.1.124:32400')) return 'Plex';
   if (url.includes('disneyplus.com')) return 'Disney+';
   if (url.includes('bbc.co.uk/iplayer')) return 'BBC IPlayer';
+  if (url.includes('channel4.com')) return 'Channel 4';
   return 'Other';
 };
 
