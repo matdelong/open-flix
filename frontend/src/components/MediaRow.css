@@ -20,7 +20,15 @@
   display: none;
 }
 
-.media-scroller {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+@media (max-width: 768px) {
+  .media-scroller {
+    gap: 1rem;
+    padding-bottom: 0.5rem;
+    scroll-padding-left: 1rem; /* Better scroll snap alignment if used */
+  }
+  
+  .media-row h2 {
+    font-size: 1.2rem; /* Slightly smaller title */
+    margin-left: 0.5rem;
+  }
 }

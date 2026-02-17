@@ -44,3 +44,19 @@
   margin: 0;
   font-size: 0.9rem;
 }
+
+@media (max-width: 768px) {
+  .media-card {
+    min-width: 140px;
+  }
+  
+  .media-card img {
+    height: 210px;
+  }
+
+  /* On mobile, standard hover effects can be sticky. 
+     We might want to show info always or just rely on click.
+     For now, we'll keep it hidden to avoid clutter, 
+     or maybe show it on active state? 
+     Let's stick to the request about sizing first. */
+}

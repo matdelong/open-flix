@@ -16,7 +16,22 @@
   display: flex;
 }
 
-.add-streaming-link input {
-  flex-grow: 1;
-  margin-right: 0.5rem;
+@media (max-width: 768px) {
+  .streaming-link-item,
+  .add-streaming-link {
+    flex-direction: column;
+  }
+
+  .streaming-link-item input,
+  .add-streaming-link input {
+    margin-right: 0;
+    margin-bottom: 0.5rem;
+    width: 100%;
+  }
+
+  .streaming-link-item button,
+  .add-streaming-link button {
+    width: 100%;
+    min-height: 44px;
+  }
 }

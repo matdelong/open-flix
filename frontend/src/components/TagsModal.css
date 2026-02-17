@@ -72,7 +72,36 @@
   padding: 0.6rem 1rem;
 }
 
-.modal-content .add-tag-form button {
-  white-space: nowrap;
-  padding: 0.6rem 1.2rem;
+@media (max-width: 768px) {
+  .tags-list {
+    max-height: 50vh; /* Use viewport height */
+  }
+
+  .tags-list li {
+    padding: 0.75rem 1rem; /* Larger touch target */
+  }
+  
+  .delete-tag-button {
+    opacity: 1; /* Always visible on touch */
+    padding: 0.5rem; /* Larger touch target */
+    font-size: 1.5rem;
+  }
+  
+  .drag-handle {
+    padding: 0.5rem; /* Larger touch target */
+    font-size: 1.5rem;
+  }
+  
+  .modal-content .add-tag-form {
+    flex-direction: column; /* Stack input and button on very small screens if needed, or keep row but adjust size */
+  }
+  
+  .modal-content .add-tag-form input {
+    width: 100%;
+    margin-bottom: 0.5rem !important;
+  }
+  
+  .modal-content .add-tag-form button {
+    width: 100%;
+  }
 }

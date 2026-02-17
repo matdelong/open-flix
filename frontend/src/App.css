@@ -3,6 +3,7 @@ body.modal-open {
 }
 
 #root {
+  width: 100%;
   max-width: 1280px;
   margin: 0 auto;
   padding: 2rem;
@@ -169,6 +170,61 @@ body.modal-open {
   background-color: #7a82ff;
 }
 
-.modal-actions button[type="button"] {
-  background-color: transparent;
+@media (max-width: 768px) {
+  #root {
+    padding: 1rem;
+  }
+
+  .app-header {
+    flex-direction: column;
+    gap: 1.5rem;
+    align-items: stretch;
+  }
+
+  .header-left {
+    flex-direction: column;
+    gap: 1rem;
+    width: 100%;
+  }
+  
+  .app-header h1 {
+    font-size: 1.8rem;
+    margin: 0;
+    text-align: center;
+  }
+
+  .tabs {
+    width: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  
+  .header-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .header-actions button {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px; /* Touch target size */
+  }
+
+  /* Modal responsiveness */
+  .modal-content {
+    width: 95%;
+    padding: 1.5rem;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  
+  .modal-actions {
+    flex-direction: column-reverse; /* Stack buttons, cancel at bottom usually or maintain order */
+    gap: 0.75rem;
+  }
+  
+  .modal-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
 }
