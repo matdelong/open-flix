@@ -44,11 +44,27 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (isModalOpen) {
+          closeModal();
+        }
+        if (isTagsModalOpen) {
+          closeTagsModal();
+        }
+      }
+    };
+
     if (isModalOpen || isTagsModalOpen) {
       document.body.classList.add('modal-open');
+      document.addEventListener('keydown', handleKeyDown);
     } else {
       document.body.classList.remove('modal-open');
     }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isModalOpen, isTagsModalOpen]);
 
   const openModal = () => {
@@ -60,6 +76,7 @@ function App() {
     setIsModalOpen(false);
     setImdbUrl('');
     setAddMediaError(''); // Clear error when closing modal
+    (document.getElementById('add-media-button') as HTMLElement)?.blur();
   };
 
   const openTagsModal = () => {
@@ -69,6 +86,7 @@ function App() {
   const closeTagsModal = () => {
     setIsTagsModalOpen(false);
     fetchMedia();
+    (document.getElementById('manage-tags-button') as HTMLElement)?.blur();
   };
 
   const handleAddMedia = async (e: React.FormEvent) => {
@@ -140,8 +158,8 @@ function App() {
           </nav>
         </div>
         <div className="header-actions">
-          <button onClick={openTagsModal}>Manage Tags</button>
-          <button onClick={openModal}>Add Media</button>
+          <button id="manage-tags-button" onClick={openTagsModal}>Manage Tags</button>
+          <button id="add-media-button" onClick={openModal}>Add Media</button>
         </div>
       </header>
       <main>
