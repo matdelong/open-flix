@@ -27,7 +27,7 @@ function App() {
   const fetchMedia = async () => {
     try {
       setAddMediaError(''); // Clear any modal errors when fetching main media
-      const res = await fetch('http://localhost:3000/api/media/grouped');
+      const res = await fetch('/api/media/grouped');
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
@@ -98,7 +98,7 @@ function App() {
     console.log('Attempting to add media with IMDB URL:', imdbUrl);
 
     try {
-      const res = await fetch('http://localhost:3000/api/media', {
+      const res = await fetch('/api/media', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -63,7 +63,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
   const fetchDetails = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`http://localhost:3000/api/media/${mediaId}`);
+      const res = await fetch(`/api/media/${mediaId}`);
       if (!res.ok) {
         throw new Error('Failed to fetch media details.');
       }
@@ -79,7 +79,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
   useEffect(() => {
     const fetchTags = async () => {
       try {
-        const res = await fetch('http://localhost:3000/api/tags');
+        const res = await fetch('/api/tags');
         if (!res.ok) {
           throw new Error('Failed to fetch tags');
         }
@@ -129,21 +129,21 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
     }
     const newTags = [...media.tags, tag];
     setMedia({ ...media, tags: newTags });
-    await makeApiCall(`http://localhost:3000/api/media/${media.id}/tags`, 'POST', { tagId });
+    await makeApiCall(`/api/media/${media.id}/tags`, 'POST', { tagId });
   };
 
   const handleRemoveTag = async (tagId: number) => {
     if (!media) return;
     const newTags = media.tags.filter(t => t.id !== tagId);
     setMedia({ ...media, tags: newTags });
-    await makeApiCall(`http://localhost:3000/api/media/${media.id}/tags/${tagId}`, 'DELETE');
+    await makeApiCall(`/api/media/${media.id}/tags/${tagId}`, 'DELETE');
   };
 
   const toggleMediaWatched = () => {
     if (!media) return;
     const newWatchedState = !media.is_watched;
     setMedia({ ...media, is_watched: newWatchedState });
-    makeApiCall(`http://localhost:3000/api/media/${media.id}/watched`, 'POST', { is_watched: newWatchedState });
+    makeApiCall(`/api/media/${media.id}/watched`, 'POST', { is_watched: newWatchedState });
   };
 
   const toggleEpisodeWatched = (seasonIdx: number, episodeIdx: number) => {
@@ -160,7 +160,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
 
     const episode = newSeasons[seasonIdx].episodes[episodeIdx];
     setMedia({ ...media, seasons: newSeasons });
-    makeApiCall(`http://localhost:3000/api/episodes/${episode.id}/watched`, 'POST', { is_watched: episode.is_watched });
+    makeApiCall(`/api/episodes/${episode.id}/watched`, 'POST', { is_watched: episode.is_watched });
   };
   
   const toggleSeasonWatched = (seasonIdx: number) => {
@@ -179,7 +179,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
 
     const season = newSeasons[seasonIdx];
     setMedia({ ...media, seasons: newSeasons });
-    makeApiCall(`http://localhost:3000/api/seasons/${season.id}/watched`, 'POST', { is_watched: season.is_watched });
+    makeApiCall(`/api/seasons/${season.id}/watched`, 'POST', { is_watched: season.is_watched });
   };
 
   const handleRescrape = async () => {
@@ -190,7 +190,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
     }
     setLoading(true);
     try {
-      await fetch(`http://localhost:3000/api/media/${media.id}/rescrape`, {
+      await fetch(`/api/media/${media.id}/rescrape`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -198,7 +198,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
         body: JSON.stringify({ epguidesUrl }),
       });
       // Refetch details to show updated data
-      const res = await fetch(`http://localhost:3000/api/media/${mediaId}`);
+      const res = await fetch(`/api/media/${mediaId}`);
       if (!res.ok) {
         throw new Error('Failed to fetch updated media details.');
       }
@@ -215,7 +215,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
     if (!media) return;
     if (window.confirm('Are you sure you want to remove this item?')) {
       try {
-        const res = await fetch(`http://localhost:3000/api/media/${media.id}`, {
+        const res = await fetch(`/api/media/${media.id}`, {
           method: 'DELETE',
         });
         if (!res.ok) {

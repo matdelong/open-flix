@@ -19,7 +19,7 @@ const TagsModal: React.FC<TagsModalProps> = ({ onClose }) => {
 
   const fetchTags = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/tags');
+      const res = await fetch('/api/tags');
       if (!res.ok) {
         throw new Error('Failed to fetch tags');
       }
@@ -53,7 +53,7 @@ const TagsModal: React.FC<TagsModalProps> = ({ onClose }) => {
     }
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:3000/api/tags', {
+      const res = await fetch('/api/tags', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -77,7 +77,7 @@ const TagsModal: React.FC<TagsModalProps> = ({ onClose }) => {
       return;
     }
     try {
-      const res = await fetch(`http://localhost:3000/api/tags/${tagId}`, {
+      const res = await fetch(`/api/tags/${tagId}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -107,7 +107,7 @@ const TagsModal: React.FC<TagsModalProps> = ({ onClose }) => {
 
     const orderedTags = newTags.map((tag, index) => ({ ...tag, sort_order: index }));
     try {
-      const res = await fetch('http://localhost:3000/api/tags', {
+      const res = await fetch('/api/tags', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

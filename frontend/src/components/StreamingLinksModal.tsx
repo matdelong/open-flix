@@ -35,7 +35,7 @@ const StreamingLinksModal: React.FC<StreamingLinksModalProps> = ({ mediaId, link
   const handleAddLink = async () => {
     if (!newLink.trim()) return;
 
-    await fetch(`http://localhost:3000/api/media/${mediaId}/streaming-links`, {
+    await fetch(`/api/media/${mediaId}/streaming-links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: newLink }),
@@ -46,7 +46,7 @@ const StreamingLinksModal: React.FC<StreamingLinksModalProps> = ({ mediaId, link
 
 
   const handleUpdateLink = async (linkId: number, url: string) => {
-    await fetch(`http://localhost:3000/api/media/${mediaId}/streaming-links/${linkId}`, {
+    await fetch(`/api/media/${mediaId}/streaming-links/${linkId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
@@ -56,7 +56,7 @@ const StreamingLinksModal: React.FC<StreamingLinksModalProps> = ({ mediaId, link
 
   const handleDeleteLink = async (linkId: number) => {
     if (window.confirm('Are you sure you want to delete this link?')) {
-      await fetch(`http://localhost:3000/api/media/${mediaId}/streaming-links/${linkId}`, {
+      await fetch(`/api/media/${mediaId}/streaming-links/${linkId}`, {
         method: 'DELETE',
       });
       onSave();
