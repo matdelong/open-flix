@@ -124,11 +124,13 @@ function App() {
   return (
     <div className="App">
       <header className="app-header">
-        <h1>Open Flix</h1>
-        <nav className="tabs">
-          <button onClick={() => setActiveTab('tv_show')} className={activeTab === 'tv_show' ? 'active' : ''}>TV Shows</button>
-          <button onClick={() => setActiveTab('movie')} className={activeTab === 'movie' ? 'active' : ''}>Movies</button>
-        </nav>
+        <div className="header-left">
+          <h1>Open Flix</h1>
+          <nav className="tabs">
+            <button onClick={() => setActiveTab('tv_show')} className={activeTab === 'tv_show' ? 'active' : ''}>TV Shows</button>
+            <button onClick={() => setActiveTab('movie')} className={activeTab === 'movie' ? 'active' : ''}>Movies</button>
+          </nav>
+        </div>
         <div className="header-actions">
           <button onClick={openTagsModal}>Manage Tags</button>
           <button onClick={openModal}>Add Media</button>
