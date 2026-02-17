@@ -1,37 +1,78 @@
 .tags-list {
   list-style: none;
   padding: 0;
-  margin-top: 1.5rem;
-  max-height: 300px; /* Or any other height */
+  margin-top: 1rem;
+  max-height: 400px;
   overflow-y: auto;
-  padding-right: 0.5rem; /* For scrollbar spacing */
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .tags-list li {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 0.75rem;
-  background-color: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   cursor: grab;
   transition: background-color 0.2s ease;
+  color: #ddd;
 }
 
 .tags-list li:hover {
-  background-color: rgba(0, 0, 0, 0.3);
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .tags-list li:active {
   cursor: grabbing;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.drag-handle {
+  margin-right: 0.75rem;
+  color: #666;
+  cursor: grab;
+  font-size: 1.2rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.tags-list li:hover .drag-handle {
+  color: #aaa;
+}
+
+.tag-name {
+  flex-grow: 1;
+  font-size: 0.95rem;
 }
 
 .delete-tag-button {
   background: none;
   border: none;
-  color: #fff;
+  color: #ff6b6b;
   font-size: 1.2rem;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  padding: 0 0.5rem;
+}
+
+.tags-list li:hover .delete-tag-button {
+  opacity: 1;
+}
+
+.modal-content .add-tag-form {
+  display: flex;
+  flex-direction: row;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.modal-content .add-tag-form input {
+  flex-grow: 1;
+  margin-bottom: 0 !important; /* Override global input margin */
+  padding: 0.6rem 1rem;
+}
+
+.modal-content .add-tag-form button {
+  white-space: nowrap;
+  padding: 0.6rem 1.2rem;
 }

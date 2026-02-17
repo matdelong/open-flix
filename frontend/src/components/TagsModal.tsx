@@ -129,7 +129,7 @@ const TagsModal: React.FC<TagsModalProps> = ({ onClose }) => {
       <div className="modal-content">
         <h2>Manage Tags</h2>
         {error && <p className="error-message">{error}</p>}
-        <form onSubmit={handleAddTag}>
+        <form onSubmit={handleAddTag} className="add-tag-form">
           <input
             type="text"
             placeholder="New tag name"
@@ -138,7 +138,7 @@ const TagsModal: React.FC<TagsModalProps> = ({ onClose }) => {
             disabled={isLoading}
           />
           <button type="submit" disabled={isLoading}>
-            {isLoading ? 'Adding...' : 'Add Tag'}
+            {isLoading ? 'Adding...' : 'Add'}
           </button>
         </form>
         <ul className="tags-list">
@@ -150,7 +150,8 @@ const TagsModal: React.FC<TagsModalProps> = ({ onClose }) => {
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, index)}
             >
-              <span>{tag.name}</span>
+              <span className="drag-handle">⋮⋮</span>
+              <span className="tag-name">{tag.name}</span>
               <button onClick={() => handleDeleteTag(tag.id)} className="delete-tag-button">&times;</button>
             </li>
           ))}
