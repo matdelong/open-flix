@@ -1,0 +1,21 @@
+{
+  "name": "Open Flix",
+  "short_name": "Open Flix",
+  "description": "Your personal media dashboard.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#242424",
+  "theme_color": "#242424",
+  "icons": [
+    {
+      "src": "openflix.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "openflix.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
