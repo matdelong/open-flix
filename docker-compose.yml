@@ -1,6 +1,7 @@
 version: '3.8'
 services:
   frontend:
+    platform: linux/arm/v7
     build: ./frontend
     ports:
       - "8080:80"
