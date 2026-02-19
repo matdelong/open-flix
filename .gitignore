@@ -76,6 +76,9 @@ web_modules/
 .env.production.local
 .env.local
 
+# local configuration files
+docker-compose.override.yml
+
 # parcel-bundler cache files
 .cache
 .parcel-cache
