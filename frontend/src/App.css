@@ -200,14 +200,16 @@ body.modal-open {
   }
   
   .header-actions {
-    flex-direction: column;
+    flex-direction: row;
     width: 100%;
   }
   
   .header-actions button {
-    width: 100%;
+    flex: 1;
+    width: auto;
     justify-content: center;
     min-height: 44px; /* Touch target size */
+    padding: 0.75rem 0.5rem;
   }
 
   /* Modal responsiveness */
@@ -219,12 +221,13 @@ body.modal-open {
   }
   
   .modal-actions {
-    flex-direction: column-reverse; /* Stack buttons, cancel at bottom usually or maintain order */
+    flex-direction: row-reverse; /* Cancel left, Add right */
     gap: 0.75rem;
   }
   
   .modal-actions button {
-    width: 100%;
+    flex: 1;
+    width: auto;
     min-height: 44px;
   }
 }
