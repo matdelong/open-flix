@@ -135,3 +135,4 @@ Thumbs.db
 .vscode/
 *.swp
 *~
+!package-lock.json
