@@ -1,13 +1,11 @@
 services:
   frontend:
-    platform: linux/arm/v7
     build: ./frontend
     ports:
       - "8080:80"
     depends_on:
       - backend
   backend:
-    platform: linux/arm/v7
     build: ./backend
     ports:
       - "3001:3000"

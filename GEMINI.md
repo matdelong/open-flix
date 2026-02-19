@@ -16,13 +16,18 @@ This is a full-stack monorepo, containerized with Docker.
 ## Project Structure
 
 *   `/`: The project root contains the `docker-compose.yml` file and this context file.
-*   `/frontend`: Contains the React application. Key components include `MediaCard`, `MediaDetail`, `MediaRow`, `TagsModal`, and `StreamingLinksModal`.
+*   `/frontend`: Contains the React application. Key components include `MediaCard`, `MediaDetail`, `MediaRow`, `TagsModal`, `StreamingLinksModal`, and `SignIn`.
 *   `/backend`: Contains the Node.js/Express application with API routes for media, tags, and streaming links.
 *   `postgres_data`: A Docker volume used for persisting PostgreSQL data.
 
 ## Current Status & Key Features
 
-The application is a functional, feature-rich dashboard with a modern, responsive UI.
+The application is a functional, feature-rich dashboard with a modern, responsive UI and secure access control.
+
+### Authentication & Security:
+*   **PIN Protection:** The application is protected by a PIN code (configured via `WEB_PIN` environment variable).
+*   **Persistent Login:** Users remain logged in for 10 years via a secure, HTTP-only cookie containing the base64-encoded PIN.
+*   **Unauthorized Access Handling:** Attempts to access protected API routes without a valid token result in a 401 Unauthorized response, automatically logging the user out.
 
 ### Backend Capabilities:
 *   **Advanced Web Scraper:**
@@ -53,25 +58,56 @@ The application is a functional, feature-rich dashboard with a modern, responsiv
 
 ## Recent Technical Updates
 
-*   **Responsive Design:**
-    *   Implemented mobile-first CSS media queries (max-width: 768px).
-    *   Adjusted layout to stack header elements and resize media cards for smaller screens.
-    *   Ensured minimum touch target sizes (44px) for interactive elements.
-*   **Layout Fixes:**
-    *   Removed `display: flex` from `body` to resolve horizontal scrolling issues on narrow screens.
-    *   Enforced global `box-sizing: border-box` and explicit width constraints on the root container.
-*   **UX Improvements:**
-    *   Modals now close with the `Escape` key and return focus appropriately.
-    *   "Manage Tags" modal refactored for better information density and usability.
+*   **Security Implementation:**
+    *   Added `WEB_PIN` environment variable support in `docker-compose.yml`.
+    *   Created `SignIn` component for PIN entry.
+    *   Implemented backend middleware to verify `auth_token` cookie against the configured PIN.
+*   **Mobile Optimizations:**
+    *   Fixed `MediaDetail` close button styling on mobile (removed padding to ensure circular shape).
+    *   Updated "Add Media" and "Manage Tags" button layout to display side-by-side on mobile screens.
+    *   Reordered "Add" and "Cancel" buttons in the media modal for better mobile ergonomics.
 
 ## How to Run the Application
 
 1.  Navigate to the project's root directory.
-2.  Run the command: `docker-compose up -d --build` (The `-d` flag runs it in the background).
-3.  Access the web interface in your browser at: **http://localhost:8080**
-4.  To see the container logs, run `docker-compose logs -f` or `docker-compose logs backend`.
+2.  Set your desired PIN in `docker-compose.yml` (default is `0270`).
+3.  Run the command: `docker-compose up -d --build` (The `-d` flag runs it in the background).
+4.  Access the web interface in your browser at: **http://localhost:8080**
+5.  Enter the PIN to access the dashboard.
 
 This command builds the images, starts all containers, and handles networking. Database readiness is managed via healthchecks.
+
+## Deployment Notes (Raspberry Pi)
+
+### Database Migration
+To copy your local database to a running Raspberry Pi instance:
+1.  **Local Machine:**
+    ```bash
+    # Create backup
+    PGPASSWORD=password pg_dump -h localhost -U user -d openflix > backup.sql
+    # Copy to Pi
+    scp backup.sql pi@<PI_IP_ADDRESS>:/home/pi/
+    ```
+2.  **On Raspberry Pi:**
+    ```bash
+    # Clear existing schema (if conflicts exist)
+    docker exec -it open-flix-db-1 psql -U user -d openflix -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+    # Restore backup
+    docker exec -i open-flix-db-1 psql -U user -d openflix < ../backup.sql
+    ```
+
+### Troubleshooting Docker on Older OS (Buster)
+If Docker fails to start with `exit-code` on Raspbian Buster:
+1.  Switch to legacy iptables:
+    ```bash
+    sudo update-alternatives --set iptables /usr/sbin/iptables-legacy
+    sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+    ```
+2.  Configure Docker daemon (`/etc/docker/daemon.json`):
+    ```json
+    { "storage-driver": "overlay2" }
+    ```
+3.  Restart Docker: `sudo systemctl restart docker`
 
 # Gemini Instructions
 
