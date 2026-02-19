@@ -3,6 +3,7 @@ import './App.css';
 import MediaDetail from './components/MediaDetail';
 import MediaRow from './components/MediaRow';
 import TagsModal from './components/TagsModal';
+import SignIn from './components/SignIn';
 
 interface Media {
   id: number;
@@ -15,6 +16,7 @@ interface Media {
 type GroupedMedia = Record<string, Media[]>;
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => document.cookie.split('; ').some(row => row.startsWith('auth_token=')));
   const [groupedMedia, setGroupedMedia] = useState<GroupedMedia>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTagsModalOpen, setIsTagsModalOpen] = useState(false);
@@ -24,10 +26,21 @@ function App() {
   const [activeTab, setActiveTab] = useState<'tv_show' | 'movie'>('tv_show');
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null);
 
+  const handleSignOut = () => {
+    document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    setIsAuthenticated(false);
+    setGroupedMedia({});
+  };
+
   const fetchMedia = async () => {
+    if (!isAuthenticated) return;
     try {
       setAddMediaError(''); // Clear any modal errors when fetching main media
       const res = await fetch('/api/media/grouped');
+      if (res.status === 401) {
+        handleSignOut();
+        return;
+      }
       if (!res.ok) {
         throw new Error(`HTTP error! status: ${res.status}`);
       }
@@ -41,7 +54,7 @@ function App() {
 
   useEffect(() => {
     fetchMedia();
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -107,6 +120,11 @@ function App() {
       });
 
       console.log('Fetch response:', res);
+      
+      if (res.status === 401) {
+        handleSignOut();
+        return;
+      }
 
       if (!res.ok) {
         const errorData = await res.json();
@@ -134,6 +152,10 @@ function App() {
     setSelectedMediaId(null);
     fetchMedia();
   };
+
+  if (!isAuthenticated) {
+    return <SignIn onSignIn={() => setIsAuthenticated(true)} />;
+  }
 
   if (selectedMediaId) {
     return <MediaDetail mediaId={selectedMediaId} onClose={handleCloseDetail} />;
@@ -175,6 +197,12 @@ function App() {
           )
         })}
       </main>
+
+      <div style={{ textAlign: 'center', margin: '2rem 0', opacity: 0.5 }}>
+        <button onClick={handleSignOut} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
+          Sign Out
+        </button>
+      </div>
 
       {isModalOpen && (
         <div className="modal-backdrop">

@@ -15,6 +15,7 @@ services:
       - POSTGRES_DB=openflix
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=password
+      - WEB_PIN=0000
     depends_on:
       db:
         condition: service_healthy

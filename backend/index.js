@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const { Pool } = require('pg');
 const axios = require('axios');
 const cheerio = require('cheerio');
@@ -7,6 +8,32 @@ const he = require('he');
 
 const app = express();
 const port = 3000;
+
+app.use(cors());
+app.use(express.json()); // Middleware to parse JSON bodies
+app.use(cookieParser());
+
+// Auth Middleware
+const authMiddleware = (req, res, next) => {
+  const token = req.cookies.auth_token;
+  if (!token) {
+    return res.status(401).send('Unauthorized: No token provided');
+  }
+  try {
+    const decoded = Buffer.from(token, 'base64').toString('utf-8');
+    // Use environment variable WEB_PIN
+    if (decoded === process.env.WEB_PIN) {
+      next();
+    } else {
+      res.status(401).send('Unauthorized: Invalid passcode');
+    }
+  } catch (e) {
+    res.status(401).send('Unauthorized: Invalid token format');
+  }
+};
+
+// Apply auth middleware to all API routes
+app.use('/api', authMiddleware);
 
 // Function to parse date strings from epguides.com (e.g., "13 Jan 15")
 function parseAirDate(dateStr) {
@@ -149,9 +176,6 @@ const initDb = async () => {
     client.release();
   }
 };
-
-app.use(cors());
-app.use(express.json()); // Middleware to parse JSON bodies
 
 app.get('/', (req, res) => {
   res.send('Hello from the backend!');
