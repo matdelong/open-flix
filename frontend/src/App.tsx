@@ -135,6 +135,7 @@ function App() {
 
       await fetchMedia(); // Refresh the media list
       setActiveTab(addedMedia.type); // Switch to the correct tab
+      setSelectedMediaId(addedMedia.id);
       closeModal();
     } catch (err: any) {
       setAddMediaError(err.message); // Set modal-specific error
