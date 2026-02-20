@@ -197,7 +197,7 @@ app.post('/api/media', async (req, res) => {
 
     const existingMedia = await client.query('SELECT * FROM media WHERE imdb_id = $1', [imdbId]);
     if (existingMedia.rowCount > 0) {
-      return res.status(409).json({ error: 'Media with this IMDB ID already exists.' });
+      return res.status(409).json({ error: 'Media with this IMDB ID already exists.', existingMediaId: existingMedia.rows[0].id });
     }
 
     const { data } = await axios.get(imdbUrl, {

@@ -126,12 +126,20 @@ function App() {
         return;
       }
 
+      const data = await res.json();
+
+      if (res.status === 409 && data.existingMediaId) {
+        closeModal();
+        setSelectedMediaId(data.existingMediaId);
+        window.alert("Media already exists. Opening it now.");
+        return;
+      }
+
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
+        throw new Error(data.error || `HTTP error! status: ${res.status}`);
       }
       
-      const addedMedia = await res.json();
+      const addedMedia = data;
 
       await fetchMedia(); // Refresh the media list
       setActiveTab(addedMedia.type); // Switch to the correct tab
