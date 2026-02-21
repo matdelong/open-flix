@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import './App.css';
 import MediaDetail from './components/MediaDetail';
 import MediaRow from './components/MediaRow';
 import TagsModal from './components/TagsModal';
 import SignIn from './components/SignIn';
+import { Search } from 'lucide-react';
 
 interface Media {
   id: number;
@@ -25,6 +26,11 @@ function App() {
   const [addMediaError, setAddMediaError] = useState(''); // New state for modal-specific error
   const [activeTab, setActiveTab] = useState<'tv_show' | 'movie'>('tv_show');
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null);
+  
+  // Search state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Media[]>([]);
 
   const handleSignOut = () => {
     document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
@@ -162,14 +168,54 @@ function App() {
     fetchMedia();
   };
 
-  if (!isAuthenticated) {
-    return <SignIn onSignIn={() => setIsAuthenticated(true)} />;
-  }
+  const allMedia = useMemo(() => {
+    const all = new Map<number, Media>();
+    Object.values(groupedMedia).forEach(list => {
+      list.forEach(item => all.set(item.id, item));
+    });
+    return Array.from(all.values());
+  }, [groupedMedia]);
 
-  if (selectedMediaId) {
-    return <MediaDetail mediaId={selectedMediaId} onClose={handleCloseDetail} />;
-  }
-  
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    
+    const lowerQuery = query.toLowerCase();
+    const results = allMedia.filter(item => 
+      item.title.toLowerCase().includes(lowerQuery)
+    );
+    setSearchResults(results.slice(0, 10)); // Limit to 10 results
+  };
+
+  const toggleSearch = () => {
+    setIsSearchOpen(!isSearchOpen);
+    if (isSearchOpen) {
+      setSearchQuery('');
+      setSearchResults([]);
+    } else {
+      setTimeout(() => document.getElementById('search-input')?.focus(), 100);
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const searchContainer = document.getElementById('search-container');
+      if (searchContainer && !searchContainer.contains(event.target as Node)) {
+        setIsSearchOpen(false);
+        setSearchQuery('');
+        setSearchResults([]);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   const categories = Object.keys(groupedMedia);
   const filteredCategories = categories.filter(category => {
     const mediaItems = groupedMedia[category];
@@ -177,6 +223,13 @@ function App() {
     return mediaItems.some(item => item.type === activeTab);
   });
 
+  if (!isAuthenticated) {
+    return <SignIn onSignIn={() => setIsAuthenticated(true)} />;
+  }
+
+  if (selectedMediaId) {
+    return <MediaDetail mediaId={selectedMediaId} onClose={handleCloseDetail} />;
+  }
 
   return (
     <div className="App">
@@ -189,6 +242,39 @@ function App() {
           </nav>
         </div>
         <div className="header-actions">
+          <div className={`search-container ${isSearchOpen ? 'open' : ''}`} id="search-container">
+            <button className="search-icon-button" onClick={toggleSearch}>
+              <Search size={20} />
+            </button>
+            {isSearchOpen && (
+              <input
+                id="search-input"
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="search-input"
+              />
+            )}
+            {isSearchOpen && searchResults.length > 0 && (
+              <ul className="search-results">
+                {searchResults.map(result => (
+                  <li key={result.id} onClick={() => {
+                    setActiveTab(result.type);
+                    setSelectedMediaId(result.id);
+                    setIsSearchOpen(false);
+                    setSearchQuery('');
+                  }}>
+                    <img src={result.poster_url || ''} alt={result.title} />
+                    <div>
+                      <span className="search-result-title">{result.title}</span>
+                      <span className="search-result-year">({result.year})</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <button id="manage-tags-button" onClick={openTagsModal}>Manage Tags</button>
           <button id="add-media-button" onClick={openModal}>Add Media</button>
         </div>
