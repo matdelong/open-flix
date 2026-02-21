@@ -39,6 +39,8 @@ function App() {
   const [trendingMedia, setTrendingMedia] = useState<Media[]>([]);
   const [isTrendingModalOpen, setIsTrendingModalOpen] = useState(false);
   const [discoverFilter, setDiscoverFilter] = useState('trending');
+  const [discoverPage, setDiscoverPage] = useState(1);
+  const [isLoadingDiscover, setIsLoadingDiscover] = useState(false);
   const [previewMedia, setPreviewMedia] = useState<Media | null>(null); // For previewing TMDB items
 
   const handleSignOut = () => {
@@ -249,10 +251,18 @@ function App() {
     }
   };
 
-  const fetchDiscover = async (filter: string = 'trending') => {
-    setDiscoverFilter(filter);
+  const fetchDiscover = async (filter: string = 'trending', page: number = 1) => {
+    if (isLoadingDiscover) return;
+    setIsLoadingDiscover(true);
+    
+    if (filter !== discoverFilter || page === 1) {
+        setDiscoverFilter(filter);
+        setDiscoverPage(1);
+        if (page === 1) setTrendingMedia([]);
+    }
+
     try {
-      const res = await fetch(`/api/recommendations/discover?filter=${filter}&pages=3`);
+      const res = await fetch(`/api/recommendations/discover?filter=${filter}&page=${page}&count=1`);
       if (res.ok) {
         const data = await res.json();
         
@@ -269,11 +279,27 @@ function App() {
             overview: item.overview
         })).filter((item: Media) => !existingTitles.has(item.title.toLowerCase()));
 
-        setTrendingMedia(formatted);
-        setIsTrendingModalOpen(true);
+        setTrendingMedia(prev => {
+            if (page === 1) return formatted;
+            const existingIds = new Set(prev.map(item => item.id));
+            const newUniqueItems = formatted.filter(item => !existingIds.has(item.id));
+            return [...prev, ...newUniqueItems];
+        });
+        if (page === 1) setIsTrendingModalOpen(true);
       }
     } catch (err) {
       console.error("Failed to fetch discover:", err);
+    } finally {
+        setIsLoadingDiscover(false);
+    }
+  };
+
+  const handleDiscoverScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollHeight - scrollTop - clientHeight < 300 && !isLoadingDiscover) {
+        const nextPage = discoverPage + 1;
+        setDiscoverPage(nextPage);
+        fetchDiscover(discoverFilter, nextPage);
     }
   };
 
@@ -441,7 +467,7 @@ function App() {
       </main>
 
       <div style={{ textAlign: 'center', margin: '2rem 0', opacity: 0.5, display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-        <button onClick={() => { fetchDiscover('trending'); setIsTrendingModalOpen(true); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
+        <button onClick={() => { fetchDiscover('trending', 1); setIsTrendingModalOpen(true); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
           Discover More
         </button>
         <button onClick={handleSignOut} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
@@ -457,18 +483,18 @@ function App() {
               <h2 style={{ marginBottom: '1rem' }}>Discover Media</h2>
               
               <div className="discover-filters">
-                <button className={discoverFilter === 'trending' ? 'active' : ''} onClick={() => fetchDiscover('trending')}>Trending</button>
-                <button className={discoverFilter === 'top_rated_movies' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_movies')}>Top Rated Movies</button>
-                <button className={discoverFilter === 'top_rated_tv' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_tv')}>Top Rated TV</button>
-                <button className={discoverFilter === 'upcoming' ? 'active' : ''} onClick={() => fetchDiscover('upcoming')}>Coming Soon</button>
-                <button className={discoverFilter === 'now_playing' ? 'active' : ''} onClick={() => fetchDiscover('now_playing')}>In Theaters</button>
-                <button className={discoverFilter === 'popular_tv' ? 'active' : ''} onClick={() => fetchDiscover('popular_tv')}>Popular TV</button>
-                <button className={discoverFilter === 'family_movies' ? 'active' : ''} onClick={() => fetchDiscover('family_movies')}>Family Movies</button>
-                <button className={discoverFilter === 'family_tv' ? 'active' : ''} onClick={() => fetchDiscover('family_tv')}>Family TV</button>
+                <button className={discoverFilter === 'trending' ? 'active' : ''} onClick={() => fetchDiscover('trending', 1)}>Trending</button>
+                <button className={discoverFilter === 'top_rated_movies' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_movies', 1)}>Top Rated Movies</button>
+                <button className={discoverFilter === 'top_rated_tv' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_tv', 1)}>Top Rated TV</button>
+                <button className={discoverFilter === 'upcoming' ? 'active' : ''} onClick={() => fetchDiscover('upcoming', 1)}>Coming Soon</button>
+                <button className={discoverFilter === 'now_playing' ? 'active' : ''} onClick={() => fetchDiscover('now_playing', 1)}>In Theaters</button>
+                <button className={discoverFilter === 'popular_tv' ? 'active' : ''} onClick={() => fetchDiscover('popular_tv', 1)}>Popular TV</button>
+                <button className={discoverFilter === 'family_movies' ? 'active' : ''} onClick={() => fetchDiscover('family_movies', 1)}>Family Movies</button>
+                <button className={discoverFilter === 'family_tv' ? 'active' : ''} onClick={() => fetchDiscover('family_tv', 1)}>Family TV</button>
               </div>
             </div>
 
-            <div className="modal-body-scrollable">
+            <div className="modal-body-scrollable" onScroll={handleDiscoverScroll}>
               <div className="trending-grid">
                 {trendingMedia.map(item => (
                   <div key={item.id} className="trending-item" onClick={() => handlePreview(item)}>
@@ -477,6 +503,7 @@ function App() {
                   </div>
                 ))}
               </div>
+              {isLoadingDiscover && <div style={{ textAlign: 'center', padding: '1rem', color: '#888', width: '100%' }}>Loading more...</div>}
             </div>
           </div>
         </div>

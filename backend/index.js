@@ -876,7 +876,7 @@ app.get('/api/recommendations/discover', async (req, res) => {
     return res.status(503).json({ error: 'TMDB API key not configured' });
   }
 
-  const { filter, pages = 3 } = req.query;
+  const { filter, page = 1, count = 3 } = req.query;
   let endpoint = '/trending/all/week';
   let defaultMediaType = null; // To infer type if missing
   let params = {
@@ -935,10 +935,12 @@ app.get('/api/recommendations/discover', async (req, res) => {
 
   try {
     const promises = [];
-    const maxPages = parseInt(pages, 10);
-    for (let i = 1; i <= maxPages; i++) {
+    const startPage = parseInt(page, 10);
+    const numPages = parseInt(count, 10);
+    
+    for (let i = 0; i < numPages; i++) {
       promises.push(axios.get(`${TMDB_BASE_URL}${endpoint}`, {
-        params: { ...params, page: i }
+        params: { ...params, page: startPage + i }
       }));
     }
 
