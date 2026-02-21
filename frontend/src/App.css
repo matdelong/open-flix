@@ -124,12 +124,31 @@ body.modal-open {
   max-width: 500px;
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
   border: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative; /* For close button positioning */
 }
 
 .modal-content h2 {
   margin-top: 0;
   margin-bottom: 1.5rem;
   font-size: 1.8rem;
+}
+
+.close-button {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: #aaa;
+  cursor: pointer;
+  z-index: 10;
+  line-height: 1;
+  padding: 0.5rem;
+}
+
+.close-button:hover {
+  color: #fff;
 }
 
 .modal-content form {
@@ -358,5 +377,183 @@ body.modal-open {
     flex: 1;
     width: auto;
     min-height: 44px;
+  }
+}
+
+/* TMDB Integration Styles */
+.search-section-header {
+  font-weight: bold;
+  font-size: 0.85rem;
+  color: #888;
+  padding: 0.5rem 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+}
+
+.trending-modal {
+  max-width: 900px; /* Wider for grid */
+  width: 95%;
+  max-height: 85vh;
+  padding: 0; /* Remove padding from main container */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Prevent outer scroll */
+}
+
+.modal-header {
+  padding: 2rem 2rem 0.5rem 2rem;
+  flex-shrink: 0;
+  position: relative;
+  background-color: rgba(30, 30, 30, 0.98);
+  z-index: 20;
+}
+
+.modal-body-scrollable {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 2rem 2rem 2rem;
+  /* Scrollbar styling for Webkit */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.modal-body-scrollable::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body-scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body-scrollable::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+/* Close button adjustment for new header */
+.modal-header .close-button {
+  top: 1rem;
+  right: 1rem;
+}
+
+/* Discover Filters */
+.discover-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.discover-filters button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  color: #ddd;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+}
+
+.discover-filters button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.discover-filters button.active {
+  background: #646cff;
+  color: white;
+  border-color: #646cff;
+}
+
+.trending-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+.trending-item {
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.trending-item:hover {
+  transform: scale(1.05);
+}
+
+.trending-item img {
+  width: 100%;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+
+.trending-item p {
+  font-size: 0.9rem;
+  margin: 0;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Preview Modal */
+.preview-modal {
+  max-width: 600px;
+}
+
+.preview-header {
+  display: flex;
+  gap: 2rem;
+}
+
+.preview-poster {
+  width: 150px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.preview-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-info h2 {
+  margin-bottom: 0.5rem;
+}
+
+.preview-type {
+  color: #aaa;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+}
+
+.preview-overview {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+  color: #ddd;
+}
+
+@media (max-width: 600px) {
+  .preview-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  
+  .preview-poster {
+    width: 120px;
+    margin-bottom: 1rem;
+  }
+  
+  .modal-actions {
+    justify-content: center;
   }
 }

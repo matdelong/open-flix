@@ -4,6 +4,12 @@ Open Flix is a self-hosted, personal media dashboard designed to track movies an
 
 ## Features
 
+- **Advanced Search & Discovery:**
+  - **Unified Search:** Search your local library and TMDB simultaneously.
+  - **Discover More:** Browse trending, top-rated, and upcoming movies/TV shows.
+  - **Family Friendly:** Dedicated filters for family movies and TV shows.
+  - **Smart Filtering:** Automatically hides content already in your library.
+  - **Preview Mode:** View details before adding new content.
 - **Modern UI:** A sleek, dark-themed interface with "glassmorphism" design elements, providing a premium user experience.
 - **Responsive Design:** Fully optimized for both desktop and mobile devices.
 - **Smart Library Management:**
@@ -53,6 +59,28 @@ Open Flix is built as a full-stack monorepo containerized with Docker.
     To see backend logs or debug issues:
     ```bash
     docker-compose logs -f backend
+    ```
+
+## Optional Configuration
+
+### TMDB Integration (Recommended)
+
+To enable advanced search and discovery features (like "New Releases", "Coming Soon", and remote search), you need a free API key from [The Movie Database (TMDB)](https://www.themoviedb.org/documentation/api).
+
+1.  Get your API key from TMDB.
+2.  Create a `docker-compose.override.yml` file in the project root (this file is ignored by git, so your key remains private).
+3.  Add the following content:
+
+    ```yaml
+    services:
+      backend:
+        environment:
+          - TMDB_API_KEY=your_api_key_here
+    ```
+
+4.  Restart the containers:
+    ```bash
+    docker-compose up -d
     ```
 
 ## Usage

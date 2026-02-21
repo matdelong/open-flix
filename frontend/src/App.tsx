@@ -12,6 +12,8 @@ interface Media {
   type: 'movie' | 'tv_show';
   poster_url: string | null;
   year: number | null;
+  isRemote?: boolean;
+  overview?: string;
 }
 
 type GroupedMedia = Record<string, Media[]>;
@@ -31,6 +33,13 @@ function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Media[]>([]);
+  const [remoteSearchResults, setRemoteSearchResults] = useState<Media[]>([]);
+
+  // Discover / Trending
+  const [trendingMedia, setTrendingMedia] = useState<Media[]>([]);
+  const [isTrendingModalOpen, setIsTrendingModalOpen] = useState(false);
+  const [discoverFilter, setDiscoverFilter] = useState('trending');
+  const [previewMedia, setPreviewMedia] = useState<Media | null>(null); // For previewing TMDB items
 
   const handleSignOut = () => {
     document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
@@ -71,10 +80,16 @@ function App() {
         if (isTagsModalOpen) {
           closeTagsModal();
         }
+        if (isTrendingModalOpen) {
+          setIsTrendingModalOpen(false);
+        }
+        if (previewMedia) {
+          closePreview();
+        }
       }
     };
 
-    if (isModalOpen || isTagsModalOpen) {
+    if (isModalOpen || isTagsModalOpen || isTrendingModalOpen || previewMedia) {
       document.body.classList.add('modal-open');
       document.addEventListener('keydown', handleKeyDown);
     } else {
@@ -84,7 +99,14 @@ function App() {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isModalOpen, isTagsModalOpen]);
+  }, [isModalOpen, isTagsModalOpen, isTrendingModalOpen, previewMedia]);
+
+  useEffect(() => {
+    const scrollable = document.querySelector('.modal-body-scrollable');
+    if (scrollable) {
+      scrollable.scrollTop = 0;
+    }
+  }, [discoverFilter]);
 
   const openModal = () => {
     setAddMediaError(''); // Clear error when opening modal
@@ -176,10 +198,11 @@ function App() {
     return Array.from(all.values());
   }, [groupedMedia]);
 
-  const handleSearch = (query: string) => {
+  const handleSearch = async (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
       setSearchResults([]);
+      setRemoteSearchResults([]);
       return;
     }
     
@@ -187,7 +210,32 @@ function App() {
     const results = allMedia.filter(item => 
       item.title.toLowerCase().includes(lowerQuery)
     );
-    setSearchResults(results.slice(0, 10)); // Limit to 10 results
+    setSearchResults(results.slice(0, 10)); // Limit to 10 local results
+
+    // Search TMDB if query is long enough
+    if (query.length > 2) {
+      try {
+        const res = await fetch(`/api/search/tmdb?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+          const data = await res.json();
+          // Transform remote data to match Media interface
+          const remoteData: Media[] = data.map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            type: item.type,
+            poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : null,
+            year: item.year ? parseInt(item.year) : null,
+            isRemote: true,
+            overview: item.overview
+          }));
+          setRemoteSearchResults(remoteData.slice(0, 5)); // Limit to 5 remote results
+        }
+      } catch (err) {
+        console.error("Failed to search remote:", err);
+      }
+    } else {
+      setRemoteSearchResults([]);
+    }
   };
 
   const toggleSearch = () => {
@@ -195,8 +243,93 @@ function App() {
     if (isSearchOpen) {
       setSearchQuery('');
       setSearchResults([]);
+      setRemoteSearchResults([]);
     } else {
       setTimeout(() => document.getElementById('search-input')?.focus(), 100);
+    }
+  };
+
+  const fetchDiscover = async (filter: string = 'trending') => {
+    setDiscoverFilter(filter);
+    try {
+      const res = await fetch(`/api/recommendations/discover?filter=${filter}&pages=3`);
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Create a Set of existing titles for faster lookup
+        const existingTitles = new Set(allMedia.map(m => m.title.toLowerCase()));
+
+        const formatted: Media[] = data.map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            type: item.type,
+            poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w300${item.poster_path}` : null,
+            year: item.year ? parseInt(item.year) : null,
+            isRemote: true,
+            overview: item.overview
+        })).filter((item: Media) => !existingTitles.has(item.title.toLowerCase()));
+
+        setTrendingMedia(formatted);
+        setIsTrendingModalOpen(true);
+      }
+    } catch (err) {
+      console.error("Failed to fetch discover:", err);
+    }
+  };
+
+  const handlePreview = (media: Media) => {
+    setPreviewMedia(media);
+    setIsSearchOpen(false); // Close search if open
+    // Keep discover modal open behind preview so we can return to it? 
+    // Or close it? The user might want to browse more.
+    // Let's keep it open but hidden or just rely on z-index?
+    // If we set isTrendingModalOpen(false), we lose context.
+    // Let's keep it true.
+  };
+
+  const closePreview = () => {
+    setPreviewMedia(null);
+  };
+
+  const handleAddFromTMDB = async () => {
+    if (!previewMedia) return;
+    
+    setIsLoading(true);
+    setAddMediaError('');
+
+    try {
+      const res = await fetch('/api/media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tmdbId: previewMedia.id, type: previewMedia.type }),
+      });
+
+      if (res.status === 409) {
+        const data = await res.json();
+        window.alert("Media already exists. Opening it now.");
+        if (data.existingMediaId) {
+            setSelectedMediaId(data.existingMediaId);
+            setActiveTab(previewMedia.type);
+        }
+        closePreview();
+        return;
+      }
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || `HTTP error! status: ${res.status}`);
+      }
+
+      const addedMedia = await res.json();
+      await fetchMedia();
+      setActiveTab(addedMedia.type);
+      setSelectedMediaId(addedMedia.id);
+      closePreview();
+    } catch (err: any) {
+      console.error(err);
+      window.alert(`Failed to add media: ${err.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -207,6 +340,7 @@ function App() {
         setIsSearchOpen(false);
         setSearchQuery('');
         setSearchResults([]);
+        setRemoteSearchResults([]);
       }
     };
 
@@ -256,15 +390,28 @@ function App() {
                 className="search-input"
               />
             )}
-            {isSearchOpen && searchResults.length > 0 && (
+            {(searchResults.length > 0 || remoteSearchResults.length > 0) && (
               <ul className="search-results">
+                {searchResults.length > 0 && <li className="search-section-header">Library</li>}
                 {searchResults.map(result => (
-                  <li key={result.id} onClick={() => {
+                  <li key={`local-${result.id}`} onClick={() => {
                     setActiveTab(result.type);
                     setSelectedMediaId(result.id);
                     setIsSearchOpen(false);
                     setSearchQuery('');
+                    setSearchResults([]);
+                    setRemoteSearchResults([]);
                   }}>
+                    <img src={result.poster_url || ''} alt={result.title} />
+                    <div>
+                      <span className="search-result-title">{result.title}</span>
+                      <span className="search-result-year">({result.year})</span>
+                    </div>
+                  </li>
+                ))}
+                {remoteSearchResults.length > 0 && <li className="search-section-header">Add to Library</li>}
+                {remoteSearchResults.map(result => (
+                  <li key={`remote-${result.id}`} onClick={() => handlePreview(result)}>
                     <img src={result.poster_url || ''} alt={result.title} />
                     <div>
                       <span className="search-result-title">{result.title}</span>
@@ -293,11 +440,69 @@ function App() {
         })}
       </main>
 
-      <div style={{ textAlign: 'center', margin: '2rem 0', opacity: 0.5 }}>
+      <div style={{ textAlign: 'center', margin: '2rem 0', opacity: 0.5, display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+        <button onClick={() => { fetchDiscover('trending'); setIsTrendingModalOpen(true); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
+          Discover More
+        </button>
         <button onClick={handleSignOut} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
           Sign Out
         </button>
       </div>
+
+      {isTrendingModalOpen && (
+        <div className="modal-backdrop" onClick={() => setIsTrendingModalOpen(false)}>
+          <div className="modal-content trending-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <button className="close-button" onClick={() => setIsTrendingModalOpen(false)}>&times;</button>
+              <h2 style={{ marginBottom: '1rem' }}>Discover Media</h2>
+              
+              <div className="discover-filters">
+                <button className={discoverFilter === 'trending' ? 'active' : ''} onClick={() => fetchDiscover('trending')}>Trending</button>
+                <button className={discoverFilter === 'top_rated_movies' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_movies')}>Top Rated Movies</button>
+                <button className={discoverFilter === 'top_rated_tv' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_tv')}>Top Rated TV</button>
+                <button className={discoverFilter === 'upcoming' ? 'active' : ''} onClick={() => fetchDiscover('upcoming')}>Coming Soon</button>
+                <button className={discoverFilter === 'now_playing' ? 'active' : ''} onClick={() => fetchDiscover('now_playing')}>In Theaters</button>
+                <button className={discoverFilter === 'popular_tv' ? 'active' : ''} onClick={() => fetchDiscover('popular_tv')}>Popular TV</button>
+                <button className={discoverFilter === 'family_movies' ? 'active' : ''} onClick={() => fetchDiscover('family_movies')}>Family Movies</button>
+                <button className={discoverFilter === 'family_tv' ? 'active' : ''} onClick={() => fetchDiscover('family_tv')}>Family TV</button>
+              </div>
+            </div>
+
+            <div className="modal-body-scrollable">
+              <div className="trending-grid">
+                {trendingMedia.map(item => (
+                  <div key={item.id} className="trending-item" onClick={() => handlePreview(item)}>
+                    <img src={item.poster_url || ''} alt={item.title} />
+                    <p>{item.title}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewMedia && (
+        <div className="modal-backdrop">
+          <div className="modal-content preview-modal">
+            <button className="close-button" onClick={closePreview}>&times;</button>
+            <div className="preview-header">
+                {previewMedia.poster_url && <img src={previewMedia.poster_url} alt={previewMedia.title} className="preview-poster" />}
+                <div className="preview-info">
+                    <h2>{previewMedia.title} ({previewMedia.year})</h2>
+                    <p className="preview-type">{previewMedia.type === 'movie' ? 'Movie' : 'TV Show'}</p>
+                    <p className="preview-overview">{previewMedia.overview}</p>
+                    <div className="modal-actions">
+                        <button onClick={handleAddFromTMDB} disabled={isLoading}>
+                            {isLoading ? 'Adding...' : 'Add to Library'}
+                        </button>
+                        <button onClick={closePreview}>Cancel</button>
+                    </div>
+                </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="modal-backdrop">

@@ -182,9 +182,31 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/media', async (req, res) => {
-  const { imdbUrl } = req.body;
+  let { imdbUrl, tmdbId, type } = req.body;
+
+  if (tmdbId && type) {
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(503).json({ error: 'TMDB integration not configured' });
+    }
+    try {
+      const endpoint = type === 'movie' ? 'movie' : 'tv';
+      const tmdbRes = await axios.get(`https://api.themoviedb.org/3/${endpoint}/${tmdbId}/external_ids`, {
+        params: { api_key: process.env.TMDB_API_KEY }
+      });
+      const imdbId = tmdbRes.data.imdb_id;
+      if (!imdbId) {
+        return res.status(404).json({ error: 'IMDB ID not found for this media on TMDB.' });
+      }
+      imdbUrl = `https://www.imdb.com/title/${imdbId}/`;
+      console.log(`Resolved TMDB ID ${tmdbId} to IMDB URL: ${imdbUrl}`);
+    } catch (error) {
+      console.error('TMDB ID resolution error:', error);
+      return res.status(500).json({ error: 'Failed to resolve TMDB ID to IMDB ID' });
+    }
+  }
+
   if (!imdbUrl) {
-    return res.status(400).json({ error: 'imdbUrl is required' });
+    return res.status(400).json({ error: 'imdbUrl or (tmdbId and type) is required' });
   }
 
   const client = await pool.connect();
@@ -803,6 +825,157 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
     res.status(500).json({ error: 'Failed to re-scrape episodes.' });
   } finally {
     client.release();
+  }
+});
+
+// TMDB Integration
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+
+app.get('/api/search/tmdb', async (req, res) => {
+  if (!TMDB_API_KEY) {
+    return res.status(503).json({ error: 'TMDB API key not configured' });
+  }
+  const { q } = req.query;
+  if (!q) {
+    return res.status(400).json({ error: 'Query parameter "q" is required' });
+  }
+
+  try {
+    const response = await axios.get(`${TMDB_BASE_URL}/search/multi`, {
+      params: {
+        api_key: TMDB_API_KEY,
+        query: q,
+        include_adult: false,
+        language: 'en-US',
+        page: 1,
+      },
+    });
+
+    const results = response.data.results
+      .filter(item => item.media_type === 'movie' || item.media_type === 'tv')
+      .map(item => ({
+        id: item.id, // TMDB ID
+        title: item.media_type === 'movie' ? item.title : item.name,
+        type: item.media_type === 'movie' ? 'movie' : 'tv_show',
+        poster_path: item.poster_path,
+        year: (item.release_date || item.first_air_date || '').substring(0, 4),
+        overview: item.overview,
+        media_type: item.media_type // keep original type for logic
+      }));
+
+    res.json(results);
+  } catch (error) {
+    console.error('TMDB Search Error:', error.message);
+    res.status(500).json({ error: 'Failed to search TMDB' });
+  }
+});
+
+app.get('/api/recommendations/discover', async (req, res) => {
+  if (!TMDB_API_KEY) {
+    return res.status(503).json({ error: 'TMDB API key not configured' });
+  }
+
+  const { filter, pages = 3 } = req.query;
+  let endpoint = '/trending/all/week';
+  let defaultMediaType = null; // To infer type if missing
+  let params = {
+    api_key: TMDB_API_KEY,
+    language: 'en-US',
+    include_adult: false,
+  };
+
+  const today = new Date();
+  const future = new Date();
+  future.setDate(today.getDate() + 90);
+  const todayStr = today.toISOString().split('T')[0];
+  const futureStr = future.toISOString().split('T')[0];
+
+  switch (filter) {
+    case 'top_rated_movies':
+      endpoint = '/movie/top_rated';
+      defaultMediaType = 'movie';
+      break;
+    case 'top_rated_tv':
+      endpoint = '/tv/top_rated';
+      defaultMediaType = 'tv';
+      break;
+    case 'upcoming':
+      endpoint = '/discover/movie';
+      params['primary_release_date.gte'] = todayStr;
+      params['primary_release_date.lte'] = futureStr;
+      params.sort_by = 'popularity.desc';
+      defaultMediaType = 'movie';
+      break;
+    case 'now_playing':
+      endpoint = '/movie/now_playing';
+      defaultMediaType = 'movie';
+      break;
+    case 'popular_tv':
+      endpoint = '/tv/popular';
+      defaultMediaType = 'tv';
+      break;
+    case 'family_movies':
+      endpoint = '/discover/movie';
+      params.with_genres = '10751'; // Family genre ID
+      params.sort_by = 'popularity.desc';
+      defaultMediaType = 'movie';
+      break;
+    case 'family_tv':
+      endpoint = '/discover/tv';
+      params.with_genres = '10751'; // Family genre ID
+      params.sort_by = 'popularity.desc';
+      defaultMediaType = 'tv';
+      break;
+    case 'trending':
+    default:
+      endpoint = '/trending/all/week';
+      break;
+  }
+
+  try {
+    const promises = [];
+    const maxPages = parseInt(pages, 10);
+    for (let i = 1; i <= maxPages; i++) {
+      promises.push(axios.get(`${TMDB_BASE_URL}${endpoint}`, {
+        params: { ...params, page: i }
+      }));
+    }
+
+    const responses = await Promise.all(promises);
+    
+    // Combine results from all pages
+    const allResults = responses.flatMap(response => response.data.results);
+    
+    // Deduplicate by ID
+    const seenIds = new Set();
+    const uniqueResults = [];
+    for (const item of allResults) {
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        uniqueResults.push(item);
+      }
+    }
+
+    const results = uniqueResults
+      .map(item => {
+        const mediaType = item.media_type || defaultMediaType;
+        if (mediaType !== 'movie' && mediaType !== 'tv') return null; // Filter out people
+        return {
+            id: item.id,
+            title: mediaType === 'movie' ? item.title : item.name,
+            type: mediaType === 'movie' ? 'movie' : 'tv_show',
+            poster_path: item.poster_path,
+            year: (item.release_date || item.first_air_date || '').substring(0, 4),
+            overview: item.overview,
+        };
+      })
+      .filter(item => item !== null);
+
+    res.json(results);
+  } catch (error) {
+    console.error('TMDB Discover Error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch discovered media' });
   }
 });
 
