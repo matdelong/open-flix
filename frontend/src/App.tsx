@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import './App.css';
 import MediaDetail from './components/MediaDetail';
 import MediaRow from './components/MediaRow';
@@ -43,6 +43,7 @@ function App() {
   const [isLoadingDiscover, setIsLoadingDiscover] = useState(false);
   const [previewMedia, setPreviewMedia] = useState<Media | null>(null); // For previewing TMDB items
   const [tmdbEnabled, setTmdbEnabled] = useState(false);
+  const [rowScrollPositions, setRowScrollPositions] = useState<Record<string, number>>({});
 
   useEffect(() => {
     fetch('/api/config')
@@ -191,7 +192,16 @@ function App() {
     }
   };
 
+  const scrollYRef = useRef(0);
+
+  useLayoutEffect(() => {
+    if (selectedMediaId === null) {
+      window.scrollTo(0, scrollYRef.current);
+    }
+  }, [selectedMediaId]);
+
   const handleCardClick = (id: number) => {
+    scrollYRef.current = window.scrollY;
     setSelectedMediaId(id);
   };
 
@@ -391,6 +401,13 @@ function App() {
     return mediaItems.some(item => item.type === activeTab);
   });
 
+  const handleRowScroll = (category: string, scrollLeft: number) => {
+    setRowScrollPositions(prev => ({
+      ...prev,
+      [category]: scrollLeft
+    }));
+  };
+
   if (!isAuthenticated) {
     return <SignIn onSignIn={() => setIsAuthenticated(true)} />;
   }
@@ -469,6 +486,8 @@ function App() {
               title={category}
               media={itemsForCategory}
               onCardClick={handleCardClick}
+              initialScrollLeft={rowScrollPositions[category] || 0}
+              onScroll={(left) => handleRowScroll(category, left)}
             />
           )
         })}
