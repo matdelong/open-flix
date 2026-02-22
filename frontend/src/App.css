@@ -557,4 +557,38 @@ body.modal-open {
   .modal-actions {
     justify-content: center;
   }
+
+  /* Optimize Discover Modal for Mobile */
+  .modal-header {
+    padding: 1.5rem 1rem 0.5rem 1rem;
+  }
+
+  .modal-header h2 {
+    font-size: 1.4rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .discover-filters {
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .discover-filters button {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+  }
+
+  .modal-body-scrollable {
+    padding: 0.5rem 1rem 1rem 1rem;
+  }
+
+  .trending-grid {
+    /* Force 3 columns on small screens */
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+  }
+
+  .trending-item p {
+    font-size: 0.75rem;
+  }
 }
