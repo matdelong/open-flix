@@ -185,6 +185,16 @@
   content: '+';
 }
 
+/* Invert colors for simple-icons SVGs (which are black by default) */
+.streaming-link-icon img {
+  filter: invert(1);
+  transition: filter 0.2s;
+}
+
+.streaming-link-icon:hover img {
+  filter: invert(0.8);
+}
+
 .detail-description {
   line-height: 1.6;
 }

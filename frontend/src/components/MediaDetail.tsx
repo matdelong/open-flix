@@ -230,15 +230,32 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
   };
 
   const getPlatformIcon = (platform: string) => {
+    const baseUrl = 'https://unpkg.com/simple-icons@v14.0.0/icons/';
     switch (platform) {
-      case 'Netflix': return 'N';
-      case 'Amazon Prime Video': return 'A';
-      case 'Plex': return 'P';
-      case 'Disney+': return 'D+';
-      case 'BBC IPlayer': return 'BBC';
-      case 'Channel 4': return '4';
-      default: return '🔗';
+      case 'Netflix': return `${baseUrl}netflix.svg`;
+      case 'Amazon Prime Video': return `${baseUrl}amazon.svg`;
+      case 'Plex': return `${baseUrl}plex.svg`;
+      case 'Disney+': return 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Disney%2B_logo.svg';
+      case 'BBC IPlayer': return 'https://www.svgrepo.com/show/514952/bbc-iplayer.svg';
+      case 'Channel 4': return `${baseUrl}channel4.svg`;
+      default: return null;
     }
+  };
+
+  const getLinkTooltip = (url: string, platform: string) => {
+    if (platform !== 'Other') {
+      return `Watch on ${platform}`;
+    }
+    try {
+      const hostname = new URL(url).hostname;
+      // Check if hostname looks like a normal domain (has letters, maybe dots/dashes, no purely numeric/IP look)
+      if (/[a-zA-Z]/.test(hostname) && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
+         return `Watch on ${hostname.replace('www.', '')}`;
+      }
+    } catch (e) {
+      // ignore invalid URLs
+    }
+    return "Watch online";
   };
 
   if (loading) return <div className="detail-loading">Loading...</div>;
@@ -278,11 +295,15 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
               </select>
             </div>
             <div className="streaming-links">
-              {media && media.streaming_links && media.streaming_links.map(link => (
-                <a href={link.url} key={link.id} target="_blank" rel="noopener noreferrer" className="streaming-link-icon">
-                  {getPlatformIcon(link.platform)}
-                </a>
-              ))}
+              {media && media.streaming_links && media.streaming_links.map(link => {
+                const iconUrl = getPlatformIcon(link.platform);
+                const tooltip = getLinkTooltip(link.url, link.platform);
+                return (
+                  <a href={link.url} key={link.id} target="_blank" rel="noopener noreferrer" className="streaming-link-icon" title={tooltip}>
+                    {iconUrl ? <img src={iconUrl} alt={link.platform} style={{ width: '24px', height: '24px' }} /> : '🔗'}
+                  </a>
+                );
+              })}
               <button onClick={() => setIsStreamingLinksModalOpen(true)} className="streaming-link-button"></button>
             </div>
             <p className="detail-description">{media.description}</p>
