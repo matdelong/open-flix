@@ -483,17 +483,37 @@ function App() {
               <h2 style={{ marginBottom: '1rem' }}>Discover Media</h2>
               
               <div className="discover-filters">
-                <button className={discoverFilter === 'trending' ? 'active' : ''} onClick={() => fetchDiscover('trending', 1)}>Trending</button>
-                <button className={discoverFilter === 'top_rated_movies' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_movies', 1)}>Top Rated Movies</button>
-                <button className={discoverFilter === 'top_rated_tv' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_tv', 1)}>Top Rated TV</button>
-                <button className={discoverFilter === 'upcoming' ? 'active' : ''} onClick={() => fetchDiscover('upcoming', 1)}>Coming Soon</button>
-                <button className={discoverFilter === 'now_playing' ? 'active' : ''} onClick={() => fetchDiscover('now_playing', 1)}>In Theaters</button>
-                <button className={discoverFilter === 'popular_tv' ? 'active' : ''} onClick={() => fetchDiscover('popular_tv', 1)}>Popular TV</button>
-                <button className={discoverFilter === 'family_movies' ? 'active' : ''} onClick={() => fetchDiscover('family_movies', 1)}>Family Movies</button>
-                <button className={discoverFilter === 'family_tv' ? 'active' : ''} onClick={() => fetchDiscover('family_tv', 1)}>Family TV</button>
-                <button className={discoverFilter === 'documentary_movies' ? 'active' : ''} onClick={() => fetchDiscover('documentary_movies', 1)}>Documentaries</button>
-                <button className={discoverFilter === 'comedy_movies' ? 'active' : ''} onClick={() => fetchDiscover('comedy_movies', 1)}>Comedy</button>
-                <button className={discoverFilter === 'romcom_movies' ? 'active' : ''} onClick={() => fetchDiscover('romcom_movies', 1)}>Rom-Com</button>
+                <select 
+                  className="mobile-filters" 
+                  value={discoverFilter} 
+                  onChange={(e) => fetchDiscover(e.target.value, 1)}
+                >
+                  <option value="trending">Trending</option>
+                  <option value="top_rated_movies">Top Rated Movies</option>
+                  <option value="top_rated_tv">Top Rated TV</option>
+                  <option value="upcoming">Coming Soon</option>
+                  <option value="now_playing">In Theaters</option>
+                  <option value="popular_tv">Popular TV</option>
+                  <option value="family_movies">Family Movies</option>
+                  <option value="family_tv">Family TV</option>
+                  <option value="documentary_movies">Documentaries</option>
+                  <option value="comedy_movies">Comedy</option>
+                  <option value="romcom_movies">Rom-Com</option>
+                </select>
+
+                <div className="desktop-filters">
+                  <button className={discoverFilter === 'trending' ? 'active' : ''} onClick={() => fetchDiscover('trending', 1)}>Trending</button>
+                  <button className={discoverFilter === 'top_rated_movies' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_movies', 1)}>Top Rated Movies</button>
+                  <button className={discoverFilter === 'top_rated_tv' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_tv', 1)}>Top Rated TV</button>
+                  <button className={discoverFilter === 'upcoming' ? 'active' : ''} onClick={() => fetchDiscover('upcoming', 1)}>Coming Soon</button>
+                  <button className={discoverFilter === 'now_playing' ? 'active' : ''} onClick={() => fetchDiscover('now_playing', 1)}>In Theaters</button>
+                  <button className={discoverFilter === 'popular_tv' ? 'active' : ''} onClick={() => fetchDiscover('popular_tv', 1)}>Popular TV</button>
+                  <button className={discoverFilter === 'family_movies' ? 'active' : ''} onClick={() => fetchDiscover('family_movies', 1)}>Family Movies</button>
+                  <button className={discoverFilter === 'family_tv' ? 'active' : ''} onClick={() => fetchDiscover('family_tv', 1)}>Family TV</button>
+                  <button className={discoverFilter === 'documentary_movies' ? 'active' : ''} onClick={() => fetchDiscover('documentary_movies', 1)}>Documentaries</button>
+                  <button className={discoverFilter === 'comedy_movies' ? 'active' : ''} onClick={() => fetchDiscover('comedy_movies', 1)}>Comedy</button>
+                  <button className={discoverFilter === 'romcom_movies' ? 'active' : ''} onClick={() => fetchDiscover('romcom_movies', 1)}>Rom-Com</button>
+                </div>
               </div>
             </div>
 
