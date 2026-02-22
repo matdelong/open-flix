@@ -853,7 +853,7 @@ app.get('/api/search/tmdb', async (req, res) => {
     });
 
     const results = response.data.results
-      .filter(item => item.media_type === 'movie' || item.media_type === 'tv')
+      .filter(item => (item.media_type === 'movie' || item.media_type === 'tv') && item.poster_path)
       .map(item => ({
         id: item.id, // TMDB ID
         title: item.media_type === 'movie' ? item.title : item.name,
@@ -927,6 +927,24 @@ app.get('/api/recommendations/discover', async (req, res) => {
       params.sort_by = 'popularity.desc';
       defaultMediaType = 'tv';
       break;
+    case 'documentary_movies':
+      endpoint = '/discover/movie';
+      params.with_genres = '99'; // Documentary genre ID
+      params.sort_by = 'popularity.desc';
+      defaultMediaType = 'movie';
+      break;
+    case 'comedy_movies':
+      endpoint = '/discover/movie';
+      params.with_genres = '35'; // Comedy genre ID
+      params.sort_by = 'popularity.desc';
+      defaultMediaType = 'movie';
+      break;
+    case 'romcom_movies':
+      endpoint = '/discover/movie';
+      params.with_genres = '35,10749'; // Comedy AND Romance
+      params.sort_by = 'popularity.desc';
+      defaultMediaType = 'movie';
+      break;
     case 'trending':
     default:
       endpoint = '/trending/all/week';
@@ -972,7 +990,7 @@ app.get('/api/recommendations/discover', async (req, res) => {
             overview: item.overview,
         };
       })
-      .filter(item => item !== null);
+      .filter(item => item !== null && item.poster_path);
 
     res.json(results);
   } catch (error) {

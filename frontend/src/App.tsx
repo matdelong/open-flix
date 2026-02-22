@@ -491,6 +491,9 @@ function App() {
                 <button className={discoverFilter === 'popular_tv' ? 'active' : ''} onClick={() => fetchDiscover('popular_tv', 1)}>Popular TV</button>
                 <button className={discoverFilter === 'family_movies' ? 'active' : ''} onClick={() => fetchDiscover('family_movies', 1)}>Family Movies</button>
                 <button className={discoverFilter === 'family_tv' ? 'active' : ''} onClick={() => fetchDiscover('family_tv', 1)}>Family TV</button>
+                <button className={discoverFilter === 'documentary_movies' ? 'active' : ''} onClick={() => fetchDiscover('documentary_movies', 1)}>Documentaries</button>
+                <button className={discoverFilter === 'comedy_movies' ? 'active' : ''} onClick={() => fetchDiscover('comedy_movies', 1)}>Comedy</button>
+                <button className={discoverFilter === 'romcom_movies' ? 'active' : ''} onClick={() => fetchDiscover('romcom_movies', 1)}>Rom-Com</button>
               </div>
             </div>
 
