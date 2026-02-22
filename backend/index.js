@@ -999,6 +999,10 @@ app.get('/api/recommendations/discover', async (req, res) => {
   }
 });
 
+app.get('/api/config', (req, res) => {
+  res.json({ tmdbEnabled: !!process.env.TMDB_API_KEY });
+});
+
 app.listen(port, () => {
   console.log(`Backend listening at http://localhost:${port}`);
   initDb();

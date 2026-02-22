@@ -42,6 +42,14 @@ function App() {
   const [discoverPage, setDiscoverPage] = useState(1);
   const [isLoadingDiscover, setIsLoadingDiscover] = useState(false);
   const [previewMedia, setPreviewMedia] = useState<Media | null>(null); // For previewing TMDB items
+  const [tmdbEnabled, setTmdbEnabled] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(data => setTmdbEnabled(data.tmdbEnabled))
+      .catch(err => console.error('Failed to fetch config', err));
+  }, []);
 
   const handleSignOut = () => {
     document.cookie = "auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
@@ -569,6 +577,15 @@ function App() {
               />
               {addMediaError && <p className="error-message">{addMediaError}</p>}
               <div className="modal-actions">
+                {tmdbEnabled && (
+                  <button 
+                    type="button" 
+                    onClick={() => { closeModal(); fetchDiscover('trending', 1); setIsTrendingModalOpen(true); }}
+                    style={{ marginRight: 'auto' }}
+                  >
+                    Discover More
+                  </button>
+                )}
                 <button type="submit" disabled={isLoading}>
                   {isLoading ? 'Adding...' : 'Add'}
                 </button>
