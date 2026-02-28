@@ -595,22 +595,23 @@ function App() {
                 disabled={isLoading}
               />
               {addMediaError && <p className="error-message">{addMediaError}</p>}
-              <div className="modal-actions">
-                {tmdbEnabled && (
+              <div className="modal-actions" style={{ justifyContent: 'space-between', width: '100%' }}>
+                {tmdbEnabled ? (
                   <button 
                     type="button" 
                     onClick={() => { closeModal(); fetchDiscover('trending', 1); setIsTrendingModalOpen(true); }}
-                    style={{ marginRight: 'auto' }}
                   >
                     Discover More
                   </button>
-                )}
-                <button type="submit" disabled={isLoading}>
-                  {isLoading ? 'Adding...' : 'Add'}
-                </button>
-                <button type="button" onClick={closeModal} disabled={isLoading}>
-                  Cancel
-                </button>
+                ) : <div />}
+                <div style={{ display: 'flex', gap: '1rem', flex: 1, justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={closeModal} disabled={isLoading} style={{ flex: '0 1 auto' }}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={isLoading} style={{ flex: '0 1 auto' }}>
+                    {isLoading ? 'Adding...' : 'Add'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
