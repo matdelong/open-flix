@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './MediaDetail.css';
 import StreamingLinksModal from './StreamingLinksModal';
 
@@ -59,6 +59,36 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isStreamingLinksModalOpen, setIsStreamingLinksModalOpen] = useState(false);
+  const [collapsedSeasons, setCollapsedSeasons] = useState<Record<number, boolean>>({});
+  const initializedMediaId = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (media?.type === 'tv_show' && media.seasons && initializedMediaId.current !== media.id) {
+      initializedMediaId.current = media.id;
+      const initialState: Record<number, boolean> = {};
+      media.seasons.forEach(season => {
+        const hasEpisodes = season.episodes.length > 0;
+        // Check if all aired episodes are watched (and there are actually aired episodes)
+        const airedEpisodes = season.episodes.filter(ep => !ep.air_date || new Date(ep.air_date) <= new Date());
+        const allAiredWatched = airedEpisodes.length > 0 && airedEpisodes.every(ep => ep.is_watched);
+        const hasUnaired = season.episodes.some(ep => ep.air_date && new Date(ep.air_date) > new Date());
+        
+        // Collapse if all aired episodes are watched AND there are no unaired episodes.
+        // Wait, user said "Seasons where all episodes are watched should be collapsed by default."
+        // If there are unaired episodes, they can't be watched, so the season shouldn't be collapsed.
+        if (hasEpisodes && allAiredWatched && !hasUnaired) {
+            initialState[season.id] = true;
+        } else {
+            initialState[season.id] = false;
+        }
+      });
+      setCollapsedSeasons(initialState);
+    }
+  }, [media]);
+
+  const toggleSeasonCollapse = (seasonId: number) => {
+    setCollapsedSeasons(prev => ({ ...prev, [seasonId]: !prev[seasonId] }));
+  };
 
   const fetchDetails = async () => {
     setLoading(true);
@@ -328,39 +358,51 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
           <>
             <h2>Seasons</h2>
             <div className="seasons-container">
-              {media.seasons.map((season, seasonIdx) => (
-                <div key={season.id} className="season">
-                  <div className="season-header">
-                    <h3>Season {season.season_number} ({season.year})</h3>
-                    <button 
-                      onClick={() => toggleSeasonWatched(seasonIdx)} 
-                      className="watch-button season-watch-button"
-                      disabled={season.episodes.some(ep => !ep.air_date || new Date(ep.air_date) > new Date())}
+              {media.seasons.map((season, seasonIdx) => {
+                const isCollapsed = collapsedSeasons[season.id];
+                return (
+                  <div key={season.id} className="season">
+                    <div 
+                      className="season-header" 
+                      onClick={() => toggleSeasonCollapse(season.id)}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
                     >
-                      {season.is_watched ? 'Mark Season as Unwatched' : 'Mark Season as Watched'}
-                    </button>
+                      <h3 style={{ margin: 0, borderBottom: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {isCollapsed ? '▶' : '▼'} Season {season.season_number} ({season.year})
+                      </h3>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); toggleSeasonWatched(seasonIdx); }} 
+                        className="watch-button season-watch-button"
+                        style={{ marginTop: 0 }}
+                        disabled={season.episodes.some(ep => !ep.air_date || new Date(ep.air_date) > new Date())}
+                      >
+                        {season.is_watched ? 'Mark Season as Unwatched' : 'Mark Season as Watched'}
+                      </button>
+                    </div>
+                    {!isCollapsed && (
+                      <ul className="episode-list">
+                        {season.episodes.map((episode, episodeIdx) => {
+                          const hasAired = !episode.air_date || new Date(episode.air_date) <= new Date();
+                          return (
+                            <li key={episode.id} className={episode.is_watched ? 'watched' : ''}>
+                              <label>
+                                <input 
+                                  type="checkbox" 
+                                  checked={episode.is_watched}
+                                  onChange={() => hasAired && toggleEpisodeWatched(seasonIdx, episodeIdx)}
+                                  disabled={!hasAired}
+                                />
+                                Ep {episode.episode_number}: {episode.title}
+                                {episode.air_date && <span className="air-date" style={{marginLeft: '8px'}}>({new Date(episode.air_date).toLocaleDateString()})</span>}
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </div>
-                  <ul className="episode-list">
-                    {season.episodes.map((episode, episodeIdx) => {
-                      const hasAired = !episode.air_date || new Date(episode.air_date) <= new Date();
-                      return (
-                        <li key={episode.id} className={episode.is_watched ? 'watched' : ''}>
-                          <label>
-                            <input 
-                              type="checkbox" 
-                              checked={episode.is_watched}
-                              onChange={() => hasAired && toggleEpisodeWatched(seasonIdx, episodeIdx)}
-                              disabled={!hasAired}
-                            />
-                            Ep {episode.episode_number}: {episode.title}
-                            {episode.air_date && <span className="air-date" style={{marginLeft: '8px'}}>({new Date(episode.air_date).toLocaleDateString()})</span>}
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}

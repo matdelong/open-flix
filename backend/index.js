@@ -605,7 +605,11 @@ app.post('/api/seasons/:id/watched', async (req, res) => {
       await client.query('BEGIN');
       await client.query('UPDATE seasons SET is_watched = $1 WHERE id = $2', [is_watched, id]);
       // Also mark all episodes in that season
-      await client.query('UPDATE episodes SET is_watched = $1 WHERE season_id = $2', [is_watched, id]);
+      if (is_watched) {
+        await client.query('UPDATE episodes SET is_watched = $1 WHERE season_id = $2 AND (air_date IS NULL OR air_date <= CURRENT_DATE)', [is_watched, id]);
+      } else {
+        await client.query('UPDATE episodes SET is_watched = $1 WHERE season_id = $2', [is_watched, id]);
+      }
       await client.query('COMMIT');
       res.sendStatus(204);
     } catch (err) {
