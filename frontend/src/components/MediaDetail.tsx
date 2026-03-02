@@ -184,19 +184,15 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
 
   const handleRescrape = async () => {
     if (!media) return;
-    const epguidesUrl = window.prompt('Enter epguides.com URL', media.epguides_url || '');
-    if (epguidesUrl === null) {
-      return;
-    }
     setLoading(true);
     try {
-      await fetch(`/api/media/${media.id}/rescrape`, {
+      const rescrapeRes = await fetch(`/api/media/${media.id}/rescrape`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ epguidesUrl }),
       });
+      if (!rescrapeRes.ok) {
+        const errData = await rescrapeRes.json();
+        throw new Error(errData.error || 'Failed to rescrape.');
+      }
       // Refetch details to show updated data
       const res = await fetch(`/api/media/${mediaId}`);
       if (!res.ok) {
@@ -205,6 +201,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
       const data = await res.json();
       setMedia(data);
     } catch (err: any) {
+      window.alert(err.message);
       setError(err.message);
     } finally {
       setLoading(false);

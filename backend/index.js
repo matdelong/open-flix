@@ -3,8 +3,6 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { Pool } = require('pg');
 const axios = require('axios');
-const cheerio = require('cheerio');
-const he = require('he');
 
 const app = express();
 const port = 3000;
@@ -34,40 +32,6 @@ const authMiddleware = (req, res, next) => {
 
 // Apply auth middleware to all API routes
 app.use('/api', authMiddleware);
-
-// Function to parse date strings from epguides.com (e.g., "13 Jan 15")
-function parseAirDate(dateStr) {
-  const parts = dateStr.split(' ');
-  if (parts.length !== 3) return null;
-  const day = parts[0];
-  const month = parts[1];
-  const year = `20${parts[2]}`;
-  return new Date(`${day} ${month} ${year}`);
-}
-
-// Function to normalize titles for epguides.com URLs
-const normalizeTitleForEpguides = (title) => {
-  // Remove common TV show suffixes that might not be in epguides URLs
-  let normalized = title.replace(/\(TV Series \d{4}(?:–\d{4})?\)/, '').trim();
-  normalized = normalized.replace(/\(US\)/, '').trim();
-
-  // Replace spaces with nothing and remove most special characters, preserve alphanumeric
-  normalized = normalized.replace(/[^a-zA-Z0-9]/g, '');
-
-  // Capitalize the first letter of each significant word, if necessary,
-  // but for epguides, it often seems to just concatenate words.
-  // Example: "Breaking Bad" -> "BreakingBad", "The Office (US)" -> "OfficeUS"
-  // For simplicity and to match observed patterns like "Survivor",
-  // we'll just remove spaces and non-alphanumeric, and let the first letter case be.
-  return normalized;
-};
-
-// Function to get the epguides.com URL for a TV show
-async function getEpguidesShowUrl(imdbTitle) {
-  const baseUrl = 'https://epguides.com/';
-  const normalizedTitle = normalizeTitleForEpguides(imdbTitle);
-  return `${baseUrl}${normalizedTitle}/`;
-}
 
 // PostgreSQL client setup
 const pool = new Pool({
@@ -222,47 +186,56 @@ app.post('/api/media', async (req, res) => {
       return res.status(409).json({ error: 'Media with this IMDB ID already exists.', existingMediaId: existingMedia.rows[0].id });
     }
 
-    const { data } = await axios.get(imdbUrl, {
-      headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
-    });
-    
-    const $ = cheerio.load(data);
+    let title, year, description, poster_url, rating, genres = [], actors = [], mediaType;
+    let globalTmdbId = null;
 
-    let title = he.decode($('h1[data-testid="hero-title-block__title"]').text().trim());
-    if (!title) {
-      const titleFromTag = he.decode($('title').text().trim());
-      const titleMatch = titleFromTag.match(/(.*)\s\(/);
-      if (titleMatch && titleMatch[1]) {
-        title = titleMatch[1];
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(503).json({ error: 'TMDB API key is required to add media.' });
+    }
+
+    console.log(`Using TMDB API for IMDB ID: ${imdbId}`);
+    try {
+      const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
+        params: { api_key: process.env.TMDB_API_KEY, external_source: 'imdb_id' }
+      });
+      
+      let tmdbItem = null;
+      let tmdbType = null;
+      if (findRes.data.movie_results.length > 0) {
+        tmdbItem = findRes.data.movie_results[0];
+        tmdbType = 'movie';
+      } else if (findRes.data.tv_results.length > 0) {
+        tmdbItem = findRes.data.tv_results[0];
+        tmdbType = 'tv';
       }
+
+      if (tmdbItem) {
+        globalTmdbId = tmdbItem.id;
+        const detailRes = await axios.get(`https://api.themoviedb.org/3/${tmdbType}/${tmdbItem.id}`, {
+          params: { api_key: process.env.TMDB_API_KEY, append_to_response: 'credits' }
+        });
+        const d = detailRes.data;
+
+        title = d.title || d.name;
+        const dateStr = d.release_date || d.first_air_date;
+        year = dateStr ? parseInt(dateStr.substring(0, 4), 10) : null;
+        description = d.overview;
+        poster_url = d.poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${d.poster_path}` : null;
+        rating = d.vote_average ? d.vote_average.toFixed(1).toString() : null;
+        mediaType = tmdbType === 'tv' ? 'tv_show' : 'movie';
+        
+        if (d.genres) genres = d.genres.map(g => g.name);
+        if (d.credits && d.credits.cast) actors = d.credits.cast.slice(0, 10).map(c => c.name);
+      } else {
+        console.warn('IMDB ID not found on TMDB.');
+      }
+    } catch (err) {
+      console.warn('TMDB fetch failed.', err.message);
     }
 
     if (!title) {
-      throw new Error('Could not scrape the title of the media.');
+      throw new Error('Could not retrieve media details from TMDB. Please ensure your TMDB_API_KEY is configured and the IMDB ID is valid.');
     }
-
-    const yearText = $('a[href*="/releaseinfo"]').first().text().trim();
-    const year = yearText ? parseInt(yearText, 10) : null;
-    const description = he.decode($('span[data-testid="plot-l"]').text().trim());
-    const poster_url = $('.ipc-media--poster-l img').attr('src');
-    const ratingText = he.decode($('[data-testid="hero-rating-bar__aggregate-rating__score"] > span:first-child').text().trim());
-    const rating = ratingText.split('.').length > 2 ? ratingText.substring(0, 3) : ratingText.split('/')[0];
-    
-    const genres = [];
-    $('div[data-testid="genres"] a').each((i, el) => {
-      genres.push(he.decode($(el).text().trim()));
-    });
-
-    const actors = [];
-    $('a[data-testid="title-cast-item__actor"]').each((i, el) => {
-      actors.push(he.decode($(el).text().trim()));
-    });
-    
-    // The media type needs to be determined. We can infer this by looking for season/episode information.
-    // If the epguides scrape is successful, it's a TV show.
-    // For now, we'll try to guess based on the presence of episode information on the IMDB page.
-    const isTVShow = $('a[href*="episodes"]').length > 0;
-    const mediaType = isTVShow ? 'tv_show' : 'movie';
 
     await client.query('BEGIN');
 
@@ -299,83 +272,40 @@ app.post('/api/media', async (req, res) => {
       await client.query('INSERT INTO media_actors (media_id, actor_id) VALUES ($1, $2)', [newMedia.id, actorId]);
     }
 
-      if (mediaType === 'tv_show') {
+      if (mediaType === 'tv_show' && globalTmdbId) {
         try {
-          const epguidesShowUrl = await getEpguidesShowUrl(title);
-          console.log(`Attempting to scrape epguides.com for: ${epguidesShowUrl}`);
-
-          const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
-            headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+          console.log(`Fetching seasons and episodes from TMDB for TV Show ID: ${globalTmdbId}`);
+          const tvRes = await axios.get(`https://api.themoviedb.org/3/tv/${globalTmdbId}`, {
+            params: { api_key: process.env.TMDB_API_KEY }
           });
-          
-          const $e = cheerio.load(epguidesPageData);
-          let currentSeason = 0;
-          let seasonsMap = new Map();
+          const seasons = tvRes.data.seasons;
 
-          const rows = [];
-          $e('tr').each((i, el) => {
-            rows.push($e(el));
-          });
+          for (const season of seasons) {
+            if (season.season_number === 0) continue; // Skip specials by default
+            
+            const yearForSeason = season.air_date ? parseInt(season.air_date.substring(0, 4), 10) : null;
+            const seasonRes = await client.query(
+              'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
+              [newMedia.id, season.season_number, yearForSeason]
+            );
+            const seasonIdForEpisode = seasonRes.rows[0].id;
+            console.log(`Added Season ${season.season_number} for ${title}`);
 
-          for (const row of rows) {
-            const seasonHeader = row.find("td.bold[colspan='4']");
+            const seasonDetailRes = await axios.get(`https://api.themoviedb.org/3/tv/${globalTmdbId}/season/${season.season_number}`, {
+              params: { api_key: process.env.TMDB_API_KEY }
+            });
+            const episodes = seasonDetailRes.data.episodes;
 
-            if (seasonHeader.length) {
-              const seasonMatch = seasonHeader.text().match(/Season (\d+)/);
-              if (seasonMatch) {
-                currentSeason = parseInt(seasonMatch[1], 10);
-              } else if (seasonHeader.text().includes('Specials')) {
-                currentSeason = 0; // Use 0 for specials
-              }
-            } else if (currentSeason >= 0) {
-              const columns = row.find('td');
-              if (columns.length === 4) {
-                const episodeNumberStr = columns.eq(1).text().trim();
-                const specialMatch = episodeNumberStr.match(/S(\d+)\..*-(\d+)/);
-                const regularMatch = episodeNumberStr.match(/(\d+)-(\d+)/);
-
-                let seasonForEpisode, episodeInSeason, airDateStr, titleFromFile, airDate;
-
-                if (specialMatch) {
-                  seasonForEpisode = parseInt(specialMatch[1], 10);
-                  episodeInSeason = parseInt(specialMatch[2], 10);
-                  airDateStr = columns.eq(2).text().trim();
-                  titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
-                  airDate = parseAirDate(airDateStr);
-                } else if (regularMatch) {
-                  seasonForEpisode = parseInt(regularMatch[1], 10);
-                  if (currentSeason !== 0 && seasonForEpisode !== currentSeason) continue;
-
-                  episodeInSeason = parseInt(regularMatch[2], 10);
-                  airDateStr = columns.eq(2).text().trim();
-                  titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
-                  airDate = parseAirDate(airDateStr);
-                } else {
-                  continue;
-                }
-
-                let seasonIdForEpisode = seasonsMap.get(seasonForEpisode);
-                if (!seasonIdForEpisode) {
-                  const yearForSeason = airDate ? airDate.getFullYear() : null;
-                  const seasonRes = await client.query(
-                    'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
-                    [newMedia.id, seasonForEpisode, yearForSeason]
-                  );
-                  seasonIdForEpisode = seasonRes.rows[0].id;
-                  seasonsMap.set(seasonForEpisode, seasonIdForEpisode);
-                  console.log(`Added Season ${seasonForEpisode} (${yearForSeason}) for ${title}`);
-                }
-                
-                await client.query(
-                  'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
-                  [seasonIdForEpisode, episodeInSeason, titleFromFile, airDate]
-                );
-                console.log(`  Added S${seasonForEpisode}E${episodeInSeason}: ${titleFromFile} (${airDate})`);
-              }
+            for (const ep of episodes) {
+              await client.query(
+                'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
+                [seasonIdForEpisode, ep.episode_number, ep.name, ep.air_date ? new Date(ep.air_date) : null]
+              );
+              console.log(`  Added S${season.season_number}E${ep.episode_number}: ${ep.name}`);
             }
           }
-        } catch (epguibesError) {
-          console.error("Failed to scrape episodes from epguides.com. The show will be added without episodes.", epguibesError.message);
+        } catch (tmdbErr) {
+          console.error("Failed to fetch episodes from TMDB.", tmdbErr.message);
         }
       }
 
@@ -705,7 +635,6 @@ app.post('/api/episodes/:id/watched', async (req, res) => {
 
 app.post('/api/media/:id/rescrape', async (req, res) => {
   const { id } = req.params;
-  const { epguidesUrl: customUrl } = req.body;
   const client = await pool.connect();
   try {
     const mediaRes = await client.query('SELECT * FROM media WHERE id = $1', [id]);
@@ -718,16 +647,28 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
       return res.status(400).json({ error: 'Cannot rescrape a movie.' });
     }
 
-    await client.query('BEGIN');
-    
-    let epguidesShowUrl = customUrl || media.epguides_url;
-    if (!epguidesShowUrl) {
-      epguidesShowUrl = await getEpguidesShowUrl(media.title);
-      await client.query('UPDATE media SET epguides_url = $1 WHERE id = $2', [epguidesShowUrl, id]);
-    } else if (customUrl) {
-      // If a custom URL is provided, update the stored URL
-      await client.query('UPDATE media SET epguides_url = $1 WHERE id = $2', [customUrl, id]);
+    if (!process.env.TMDB_API_KEY) {
+      return res.status(503).json({ error: 'TMDB API key is required to rescrape media.' });
     }
+
+    // Find the TMDB ID using the IMDB ID
+    let tmdbId = null;
+    try {
+      const findRes = await axios.get(`https://api.themoviedb.org/3/find/${media.imdb_id}`, {
+        params: { api_key: process.env.TMDB_API_KEY, external_source: 'imdb_id' }
+      });
+      if (findRes.data.tv_results.length > 0) {
+        tmdbId = findRes.data.tv_results[0].id;
+      }
+    } catch (e) {
+      console.error("Failed to find TMDB ID for rescrape", e.message);
+    }
+
+    if (!tmdbId) {
+       return res.status(404).json({ error: 'Could not find TMDB ID for this media to rescrape.' });
+    }
+
+    await client.query('BEGIN');
 
     // Get existing watched episodes
     const watchedEpisodesRes = await client.query(`
@@ -744,75 +685,35 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
     `, [id]);
     await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
 
-    const { data: epguidesPageData } = await axios.get(epguidesShowUrl, {
-      headers: { 'Accept-Language': 'en-US,en;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36' }
+    // Fetch from TMDB
+    const tvRes = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}`, {
+      params: { api_key: process.env.TMDB_API_KEY }
     });
-    
-    const $e = cheerio.load(epguidesPageData);
-    let currentSeason = 0;
-    let seasonsMap = new Map();
+    const seasons = tvRes.data.seasons;
 
-    const rows = [];
-    $e('tr').each((i, el) => {
-      rows.push($e(el));
-    });
+    for (const season of seasons) {
+      if (season.season_number === 0) continue; // Skip specials by default
+      
+      const yearForSeason = season.air_date ? parseInt(season.air_date.substring(0, 4), 10) : null;
+      const seasonRes = await client.query(
+        'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
+        [id, season.season_number, yearForSeason]
+      );
+      const seasonIdForEpisode = seasonRes.rows[0].id;
+      console.log(`Added Season ${season.season_number} for ${media.title}`);
 
-    for (const row of rows) {
-      const seasonHeader = row.find("td.bold[colspan='4']");
+      const seasonDetailRes = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}/season/${season.season_number}`, {
+        params: { api_key: process.env.TMDB_API_KEY }
+      });
+      const episodes = seasonDetailRes.data.episodes;
 
-      if (seasonHeader.length) {
-        const seasonMatch = seasonHeader.text().match(/Season (\d+)/);
-        if (seasonMatch) {
-          currentSeason = parseInt(seasonMatch[1], 10);
-        } else if (seasonHeader.text().includes('Specials')) {
-          currentSeason = 0; // Use 0 for specials
-        }
-      } else if (currentSeason >= 0) {
-        const columns = row.find('td');
-        if (columns.length === 4) {
-          const episodeNumberStr = columns.eq(1).text().trim();
-          const specialMatch = episodeNumberStr.match(/S(\d+)\..*-(\d+)/);
-          const regularMatch = episodeNumberStr.match(/(\d+)-(\d+)/);
-
-          let seasonForEpisode, episodeInSeason, airDateStr, titleFromFile, airDate;
-
-          if (specialMatch) {
-            seasonForEpisode = parseInt(specialMatch[1], 10);
-            episodeInSeason = parseInt(specialMatch[2], 10);
-            airDateStr = columns.eq(2).text().trim();
-            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
-            airDate = parseAirDate(airDateStr);
-          } else if (regularMatch) {
-            seasonForEpisode = parseInt(regularMatch[1], 10);
-            if (currentSeason !== 0 && seasonForEpisode !== currentSeason) continue;
-
-            episodeInSeason = parseInt(regularMatch[2], 10);
-            airDateStr = columns.eq(2).text().trim();
-            titleFromFile = he.decode(columns.eq(3).find('a').text().trim());
-            airDate = parseAirDate(airDateStr);
-          } else {
-            continue;
-          }
-
-          let seasonIdForEpisode = seasonsMap.get(seasonForEpisode);
-          if (!seasonIdForEpisode) {
-            const yearForSeason = airDate ? airDate.getFullYear() : null;
-            const seasonRes = await client.query(
-              'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
-              [id, seasonForEpisode, yearForSeason]
-            );
-            seasonIdForEpisode = seasonRes.rows[0].id;
-            seasonsMap.set(seasonForEpisode, seasonIdForEpisode);
-            console.log(`Added Season ${seasonForEpisode} (${yearForSeason}) for ${media.title}`);
-          }
-          
-          const isWatched = watchedEpisodes.has(`${seasonForEpisode}-${episodeInSeason}`);
-          await client.query(
-            'INSERT INTO episodes (season_id, episode_number, title, air_date, is_watched) VALUES ($1, $2, $3, $4, $5)',
-            [seasonIdForEpisode, episodeInSeason, titleFromFile, airDate, isWatched]
-          );
-          console.log(`  Added S${seasonForEpisode}E${episodeInSeason}: ${titleFromFile} (${airDate})`);
-        }
+      for (const ep of episodes) {
+        const isWatched = watchedEpisodes.has(`${season.season_number}-${ep.episode_number}`);
+        await client.query(
+          'INSERT INTO episodes (season_id, episode_number, title, air_date, is_watched) VALUES ($1, $2, $3, $4, $5)',
+          [seasonIdForEpisode, ep.episode_number, ep.name, ep.air_date ? new Date(ep.air_date) : null, isWatched]
+        );
+        console.log(`  Added S${season.season_number}E${ep.episode_number}: ${ep.name}`);
       }
     }
 
@@ -821,7 +722,7 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Re-scraping error:', error);
+    console.error('Re-scraping error:', error.message);
     res.status(500).json({ error: 'Failed to re-scrape episodes.' });
   } finally {
     client.release();
@@ -1003,8 +904,87 @@ app.get('/api/config', (req, res) => {
   res.json({ tmdbEnabled: !!process.env.TMDB_API_KEY });
 });
 
+const backfillMissingGenres = async () => {
+  if (!process.env.TMDB_API_KEY) return;
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(`
+      SELECT m.id, m.imdb_id, m.type, m.title 
+      FROM media m 
+      WHERE NOT EXISTS (SELECT 1 FROM media_genres mg WHERE mg.media_id = m.id)
+    `);
+    
+    if (rows.length === 0) {
+      console.log('No media missing genres.');
+      return;
+    }
+
+    console.log(`Found ${rows.length} media items missing genres. Starting backfill using TMDB...`);
+
+    for (const media of rows) {
+      try {
+        console.log(`Backfilling genres for: ${media.title} (${media.imdb_id})`);
+        
+        // Find TMDB ID
+        const findRes = await axios.get(`https://api.themoviedb.org/3/find/${media.imdb_id}`, {
+          params: { api_key: process.env.TMDB_API_KEY, external_source: 'imdb_id' }
+        });
+        
+        let tmdbId = null;
+        let tmdbType = media.type === 'movie' ? 'movie' : 'tv';
+        
+        if (tmdbType === 'movie' && findRes.data.movie_results.length > 0) {
+          tmdbId = findRes.data.movie_results[0].id;
+        } else if (tmdbType === 'tv' && findRes.data.tv_results.length > 0) {
+          tmdbId = findRes.data.tv_results[0].id;
+        }
+
+        if (tmdbId) {
+          const detailRes = await axios.get(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}`, {
+            params: { api_key: process.env.TMDB_API_KEY }
+          });
+          
+          if (detailRes.data.genres && detailRes.data.genres.length > 0) {
+            await client.query('BEGIN');
+            for (const g of detailRes.data.genres) {
+              const name = g.name;
+              let genreRes = await client.query('SELECT id FROM genres WHERE name = $1', [name]);
+              let genreId;
+              if (genreRes.rowCount === 0) {
+                genreRes = await client.query('INSERT INTO genres (name) VALUES ($1) RETURNING id', [name]);
+                genreId = genreRes.rows[0].id;
+              } else {
+                genreId = genreRes.rows[0].id;
+              }
+              await client.query('INSERT INTO media_genres (media_id, genre_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [media.id, genreId]);
+            }
+            await client.query('COMMIT');
+            console.log(`  Added ${detailRes.data.genres.length} genres for ${media.title}`);
+          } else {
+            console.log(`  No genres found on TMDB for ${media.title}`);
+          }
+        } else {
+            console.log(`  Could not find TMDB ID for ${media.title}`);
+        }
+        
+        // Sleep for 250ms to respect TMDB rate limits
+        await new Promise(resolve => setTimeout(resolve, 250));
+        
+      } catch (e) {
+        await client.query('ROLLBACK').catch(() => {}); // Catch potential rollback error if transaction wasn't active
+        console.error(`  Error backfilling ${media.title}:`, e.message);
+      }
+    }
+    console.log('Finished backfilling genres.');
+  } finally {
+    client.release();
+  }
+};
+
 app.listen(port, () => {
   console.log(`Backend listening at http://localhost:${port}`);
-  initDb();
+  initDb().then(() => {
+    backfillMissingGenres();
+  });
 });
 

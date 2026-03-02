@@ -9,7 +9,8 @@ The primary goal is to create "Open Flix," a self-hosted web application with a 
 This is a full-stack monorepo, containerized with Docker.
 
 *   **Frontend:** React with TypeScript, built using Vite.
-*   **Backend:** Node.js with Express, using `axios` and `cheerio` for web scraping.
+*   **Backend:** Node.js with Express.
+*   **Data Sources:** The Movie Database (TMDB) API for rich metadata and discovery, and epguides.com for TV episode scraping.
 *   **Database:** PostgreSQL.
 *   **Orchestration:** Docker Compose.
 
@@ -17,7 +18,7 @@ This is a full-stack monorepo, containerized with Docker.
 
 *   `/`: The project root contains the `docker-compose.yml` file and this context file.
 *   `/frontend`: Contains the React application. Key components include `MediaCard`, `MediaDetail`, `MediaRow`, `TagsModal`, `StreamingLinksModal`, and `SignIn`.
-*   `/backend`: Contains the Node.js/Express application with API routes for media, tags, and streaming links.
+*   `/backend`: Contains the Node.js/Express application with API routes for media, tags, streaming links, and TMDB proxy endpoints.
 *   `postgres_data`: A Docker volume used for persisting PostgreSQL data.
 
 ## Current Status & Key Features
@@ -30,52 +31,60 @@ The application is a functional, feature-rich dashboard with a modern, responsiv
 *   **Unauthorized Access Handling:** Attempts to access protected API routes without a valid token result in a 401 Unauthorized response, automatically logging the user out.
 
 ### Backend Capabilities:
-*   **Advanced Web Scraper:**
-    *   `POST /api/media` accepts an IMDB URL and media type (`movie` or `tv_show`).
-    *   Scrapes metadata (Title, Year, Poster, Description, Rating, Genres, Actors) by parsing embedded JSON-LD data from IMDB.
-    *   Automatically fetches full Season and Episode lists for TV shows.
+*   **TMDB Integration (Primary Data Source):**
+    *   `POST /api/media` accepts an IMDB URL or TMDB ID. It relies on a configured `TMDB_API_KEY` to fetch rich metadata (Title, Year, Poster, Description, Rating, Genres, Actors) securely and reliably, bypassing aggressive anti-bot protections previously encountered with direct IMDB HTML scraping.
+    *   `GET /api/search/tmdb`: Proxies multi-search requests to TMDB.
+    *   `GET /api/recommendations/discover`: Fetches paginated lists of trending, popular, and genre-specific (e.g., Family, Comedy) content.
+*   **TV Episode Scraper:**
+    *   Still utilizes `epguides.com` via `cheerio` to fetch comprehensive Season and Episode lists for TV shows.
 *   **Data Management:**
     *   Endpoints for CRUD operations on Media, Tags, and Streaming Links.
-    *   `GET /api/media/grouped` returns content organized by category ("New Releases", Genre) for the main view.
+    *   `GET /api/media/grouped` returns content organized by category for the main view.
 *   **Tracking:**
     *   Granular "watched" status tracking for Movies, Seasons, and individual Episodes.
 
 ### Frontend Features:
 *   **Modern UI:**
     *   A "glassmorphism" design aesthetic with translucent modals, rounded corners, and blur effects.
-    *   Fully responsive layout optimized for mobile devices (hamburger-style stacking on small screens).
+    *   Fully responsive layout optimized for mobile devices (fullscreen modals, dense grids, dropdown filters).
 *   **Dashboard View:**
-    *   Horizontally scrolling category rows.
+    *   Horizontally scrolling category rows with **scroll position persistence**.
     *   Tabs for switching between "Movies" and "TV Shows".
+    *   Vertical page scroll persistence when opening/closing media details.
+*   **Advanced Search & Discovery:**
+    *   **Unified Search Dropdown:** Instantly searches both the local library and TMDB concurrently.
+    *   **Discover More Modal:** An infinite-scrolling interface to browse TMDB catalogs (Trending, Top Rated, Coming Soon, Family, Comedy, Rom-Com). Automatically filters out content already present in the local library.
+    *   **Preview Mode:** Clicking TMDB results opens a preview modal before adding the item to the database.
 *   **Detailed Media View:**
     *   Full-page overlay displaying comprehensive media info.
     *   Manage "watched" status for episodes/seasons with checkboxes.
     *   Add/remove custom tags.
-    *   Manage direct streaming links to external platforms.
+    *   Manage direct streaming links to external platforms, featuring automatic official brand logos (Netflix, Prime, Disney+, etc.) via trusted CDNs.
 *   **Tag Management:**
     *   A drag-and-drop interface for reordering tags.
     *   Compact, inline form for adding new tags.
 
 ## Recent Technical Updates
 
-*   **Security Implementation:**
-    *   Added `WEB_PIN` environment variable support in `docker-compose.yml`.
-    *   Created `SignIn` component for PIN entry.
-    *   Implemented backend middleware to verify `auth_token` cookie against the configured PIN.
-*   **Mobile Optimizations:**
-    *   Fixed `MediaDetail` close button styling on mobile (removed padding to ensure circular shape).
-    *   Updated "Add Media" and "Manage Tags" button layout to display side-by-side on mobile screens.
-    *   Reordered "Add" and "Cancel" buttons in the media modal for better mobile ergonomics.
+*   **Complete TMDB Migration:** Removed all fragile IMDB HTML scraping logic (`cheerio`) for metadata extraction due to AWS WAF blocks. All media addition now strictly requires and utilizes the TMDB API.
+*   **Discovery Architecture:** Implemented paginated backend endpoints (`count`, `page`) and frontend infinite scroll with deduplication logic.
+*   **Mobile UI Overhaul:** Refactored the Discover modal to use a compact `<select>` dropdown for filters and a denser 3-column grid on mobile devices.
+*   **UX Polish:** Implemented scroll restoration for both horizontal media rows and the main vertical window scroll to maintain user context. Updated streaming links to use reliable SVG logos (unpkg/Iconify/Wikimedia).
 
 ## How to Run the Application
 
 1.  Navigate to the project's root directory.
-2.  Set your desired PIN in `docker-compose.yml` (default is `0270`).
-3.  Run the command: `docker-compose up -d --build` (The `-d` flag runs it in the background).
-4.  Access the web interface in your browser at: **http://localhost:8080**
-5.  Enter the PIN to access the dashboard.
-
-This command builds the images, starts all containers, and handles networking. Database readiness is managed via healthchecks.
+2.  **Crucial:** Create a `docker-compose.override.yml` and provide your `TMDB_API_KEY`:
+    ```yaml
+    services:
+      backend:
+        environment:
+          - TMDB_API_KEY=your_api_key_here
+    ```
+3.  Set your desired PIN in `docker-compose.yml` (default is `0000` or whatever is currently set).
+4.  Run the command: `docker-compose up -d --build`
+5.  Access the web interface in your browser at: **http://localhost:8080**
+6.  Enter the PIN to access the dashboard.
 
 ## Deployment Notes (Raspberry Pi)
 

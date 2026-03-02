@@ -28,7 +28,6 @@ Open Flix is built as a full-stack monorepo containerized with Docker.
 
 - **Frontend:** React (TypeScript), built with Vite.
 - **Backend:** Node.js with Express.
-- **Scraping:** Cheerio (for fetching IMDB data).
 - **Database:** PostgreSQL.
 - **Containerization:** Docker & Docker Compose.
 
