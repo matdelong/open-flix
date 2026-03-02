@@ -36,6 +36,14 @@ interface MediaDetailData {
   rating: string | null;
   is_watched: boolean;
   epguides_url: string | null;
+  backdrop_url: string | null;
+  trailer_url: string | null;
+  status: string | null;
+  age_rating: string | null;
+  runtime: number | null;
+  tagline: string | null;
+  networks: string | null;
+  creators: string | null;
   genres: string[];
   actors: string[];
   tags: { id: number; name: string }[];
@@ -265,6 +273,11 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
       case 'Disney+': return 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Disney%2B_logo.svg';
       case 'BBC IPlayer': return 'https://www.svgrepo.com/show/514952/bbc-iplayer.svg';
       case 'Channel 4': return `${baseUrl}channel4.svg`;
+      case 'Hulu': return 'https://icongr.am/simple/hulu.svg';
+      case 'Max': return `${baseUrl}hbo.svg`;
+      case 'Apple TV+': return `${baseUrl}appletv.svg`;
+      case 'Paramount+': return `${baseUrl}paramountplus.svg`;
+      case 'Peacock': return 'https://upload.wikimedia.org/wikipedia/commons/d/d3/NBCUniversal_Peacock_Logo.svg';
       default: return null;
     }
   };
@@ -292,19 +305,35 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
   const availableTags = allTags.filter(tag => !media.tags.find(t => t.id === tag.id));
 
   return (
-    <div className="media-detail-backdrop">
+    <div className="media-detail-backdrop" style={media.backdrop_url ? {
+      backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.95) 100%), url(${media.backdrop_url})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    } : {}}>
       <div className="media-detail-content">
         <button className="close-button" onClick={onClose}>&times;</button>
         <div className="detail-header">
           <img src={media.poster_url || undefined} alt={`${media.title} poster`} className="detail-poster" />
           <div className="detail-info">
             <h1>{media.title} ({media.year})</h1>
-            <a href={`https://www.imdb.com/title/${media.imdb_id}`} target="_blank" rel="noopener noreferrer" className="detail-rating">
-              IMDB Rating: {media.rating}
-            </a>
+            {media.tagline && <p style={{ fontStyle: 'italic', color: '#aaa', margin: '0 0 1rem 0' }}>{media.tagline}</p>}
+            
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+              <a href={`https://www.imdb.com/title/${media.imdb_id}`} target="_blank" rel="noopener noreferrer" className="detail-rating">
+                ⭐ {media.rating}
+              </a>
+              {media.age_rating && <span style={{ border: '1px solid #555', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.8rem' }}>{media.age_rating}</span>}
+              {media.runtime && <span style={{ color: '#ccc', fontSize: '0.9rem' }}>{media.runtime} min</span>}
+              {media.status && <span style={{ color: '#ccc', fontSize: '0.9rem' }}>• {media.status}</span>}
+            </div>
+
             <div className="detail-genres">
               {media.genres.map(genre => <span key={genre} className="genre-chip">{genre}</span>)}
             </div>
+            
+            {media.networks && <p style={{ fontSize: '0.9rem', color: '#bbb' }}><strong>Network/Studio:</strong> {media.networks}</p>}
+            {media.creators && <p style={{ fontSize: '0.9rem', color: '#bbb' }}><strong>Creator/Director:</strong> {media.creators}</p>}
+
             <div className="detail-tags">
               {media.tags.map(tag => (
                 <span key={tag.id} className="tag-chip">
@@ -334,20 +363,26 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
               <button onClick={() => setIsStreamingLinksModalOpen(true)} className="streaming-link-button"></button>
             </div>
             <p className="detail-description">{media.description}</p>
-            {media.type === 'movie' && (
-              <button onClick={toggleMediaWatched} className="watch-button">
-                {media.is_watched ? 'Mark as Unwatched' : 'Mark as Watched'}
-              </button>
-            )}
-            {media.type === 'tv_show' && (
-              <button onClick={handleRescrape} className="watch-button">
-                Re-scrape Episodes
-              </button>
-            )}
+            
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+              {media.type === 'movie' && (
+                <button onClick={toggleMediaWatched} className="watch-button" style={{ marginTop: 0 }}>
+                  {media.is_watched ? 'Mark as Unwatched' : 'Mark as Watched'}
+                </button>
+              )}
+              {media.type === 'tv_show' && (
+                <button onClick={handleRescrape} className="watch-button" style={{ marginTop: 0 }}>
+                  Re-scrape Episodes
+                </button>
+              )}
+              {media.trailer_url && (
+                <a href={media.trailer_url} target="_blank" rel="noopener noreferrer" className="watch-button" style={{ textDecoration: 'none', display: 'inline-block', marginTop: 0, backgroundColor: '#e50914', color: '#fff', fontWeight: 'bold' }}>
+                  ▶ Watch Trailer
+                </a>
+              )}
+            </div>
           </div>
         </div>
-
-        <button onClick={handleRemove} className="remove-button">Remove</button>
 
         <h2>Cast</h2>
         <ul className="detail-actors">
@@ -406,6 +441,10 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
             </div>
           </>
         )}
+
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '3rem' }}>
+          <button onClick={handleRemove} className="remove-button">Remove from Library</button>
+        </div>
       </div>
       {isStreamingLinksModalOpen && (
         <StreamingLinksModal
