@@ -810,6 +810,62 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
+app.get('/api/media/:id/recommendations', async (req, res) => {
+  const { id } = req.params;
+  if (!TMDB_API_KEY) {
+    return res.status(503).json({ error: 'TMDB API key not configured' });
+  }
+
+  try {
+    const mediaRes = await pool.query('SELECT imdb_id, type FROM media WHERE id = $1', [id]);
+    if (mediaRes.rowCount === 0) {
+      return res.status(404).json({ error: 'Media not found' });
+    }
+    const media = mediaRes.rows[0];
+
+    // Get TMDB ID
+    const findRes = await axios.get(`${TMDB_BASE_URL}/find/${media.imdb_id}`, {
+      params: { api_key: TMDB_API_KEY, external_source: 'imdb_id' }
+    });
+    
+    let tmdbId = null;
+    let tmdbType = media.type === 'movie' ? 'movie' : 'tv';
+    
+    if (tmdbType === 'movie' && findRes.data.movie_results.length > 0) {
+      tmdbId = findRes.data.movie_results[0].id;
+    } else if (tmdbType === 'tv' && findRes.data.tv_results.length > 0) {
+      tmdbId = findRes.data.tv_results[0].id;
+    }
+
+    if (!tmdbId) {
+      return res.json([]); // Can't find it on TMDB, return empty
+    }
+
+    const recRes = await axios.get(`${TMDB_BASE_URL}/${tmdbType}/${tmdbId}/recommendations`, {
+      params: { api_key: TMDB_API_KEY, language: 'en-US', page: 1 }
+    });
+
+    const results = recRes.data.results
+      .map(item => {
+        return {
+            id: item.id,
+            title: tmdbType === 'movie' ? item.title : item.name,
+            type: media.type,
+            poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : null,
+            year: (item.release_date || item.first_air_date || '').substring(0, 4),
+            overview: item.overview,
+            rating: item.vote_average ? item.vote_average.toFixed(1).toString() : null,
+        };
+      })
+      .filter(item => item !== null && item.poster_url);
+
+    res.json(results);
+  } catch (error) {
+    console.error('TMDB Recommendations Error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch recommendations' });
+  }
+});
+
 app.get('/api/search/tmdb', async (req, res) => {
   if (!TMDB_API_KEY) {
     return res.status(503).json({ error: 'TMDB API key not configured' });
@@ -854,7 +910,7 @@ app.get('/api/recommendations/discover', async (req, res) => {
     return res.status(503).json({ error: 'TMDB API key not configured' });
   }
 
-  const { filter, page = 1, count = 3 } = req.query;
+  const { filter, page = 1, count = 3, type, genres, min_rating, year_from, year_to } = req.query;
   let endpoint = '/trending/all/week';
   let defaultMediaType = null; // To infer type if missing
   let params = {
@@ -869,64 +925,102 @@ app.get('/api/recommendations/discover', async (req, res) => {
   const todayStr = today.toISOString().split('T')[0];
   const futureStr = future.toISOString().split('T')[0];
 
-  switch (filter) {
-    case 'top_rated_movies':
-      endpoint = '/movie/top_rated';
-      defaultMediaType = 'movie';
-      break;
-    case 'top_rated_tv':
-      endpoint = '/tv/top_rated';
-      defaultMediaType = 'tv';
-      break;
-    case 'upcoming':
-      endpoint = '/discover/movie';
-      params['primary_release_date.gte'] = todayStr;
-      params['primary_release_date.lte'] = futureStr;
-      params.sort_by = 'popularity.desc';
-      defaultMediaType = 'movie';
-      break;
-    case 'now_playing':
-      endpoint = '/movie/now_playing';
-      defaultMediaType = 'movie';
-      break;
-    case 'popular_tv':
-      endpoint = '/tv/popular';
-      defaultMediaType = 'tv';
-      break;
-    case 'family_movies':
-      endpoint = '/discover/movie';
-      params.with_genres = '10751'; // Family genre ID
-      params.sort_by = 'popularity.desc';
-      defaultMediaType = 'movie';
-      break;
-    case 'family_tv':
-      endpoint = '/discover/tv';
-      params.with_genres = '10751'; // Family genre ID
-      params.sort_by = 'popularity.desc';
-      defaultMediaType = 'tv';
-      break;
-    case 'documentary_movies':
-      endpoint = '/discover/movie';
-      params.with_genres = '99'; // Documentary genre ID
-      params.sort_by = 'popularity.desc';
-      defaultMediaType = 'movie';
-      break;
-    case 'comedy_movies':
-      endpoint = '/discover/movie';
-      params.with_genres = '35'; // Comedy genre ID
-      params.sort_by = 'popularity.desc';
-      defaultMediaType = 'movie';
-      break;
-    case 'romcom_movies':
-      endpoint = '/discover/movie';
-      params.with_genres = '35,10749'; // Comedy AND Romance
-      params.sort_by = 'popularity.desc';
-      defaultMediaType = 'movie';
-      break;
-    case 'trending':
-    default:
-      endpoint = '/trending/all/week';
-      break;
+  if (filter === 'custom') {
+    endpoint = type === 'tv' ? '/discover/tv' : '/discover/movie';
+    defaultMediaType = type === 'tv' ? 'tv' : 'movie';
+    params.sort_by = 'popularity.desc';
+    if (genres) params.with_genres = genres;
+    if (min_rating) {
+      params['vote_average.gte'] = min_rating;
+      params['vote_count.gte'] = 50; // Filter out obscure items with 1 10-star vote
+    }
+    if (year_from === 'coming_soon') {
+      if (type === 'tv') {
+        params['first_air_date.gte'] = todayStr;
+        params['first_air_date.lte'] = futureStr;
+      } else {
+        params['primary_release_date.gte'] = todayStr;
+        params['primary_release_date.lte'] = futureStr;
+      }
+    } else if (year_from === 'this_year') {
+      const currentYear = new Date().getFullYear();
+      if (type === 'tv') {
+        params['first_air_date.gte'] = `${currentYear}-01-01`;
+        params['first_air_date.lte'] = todayStr;
+      } else {
+        params['primary_release_date.gte'] = `${currentYear}-01-01`;
+        params['primary_release_date.lte'] = todayStr;
+      }
+    } else {
+      if (year_from) {
+        if (type === 'tv') params['first_air_date.gte'] = `${year_from}-01-01`;
+        else params['primary_release_date.gte'] = `${year_from}-01-01`;
+      }
+      if (year_to) {
+        if (type === 'tv') params['first_air_date.lte'] = `${year_to}-12-31`;
+        else params['primary_release_date.lte'] = `${year_to}-12-31`;
+      }
+    }
+  } else {
+    switch (filter) {
+      case 'top_rated_movies':
+        endpoint = '/movie/top_rated';
+        defaultMediaType = 'movie';
+        break;
+      case 'top_rated_tv':
+        endpoint = '/tv/top_rated';
+        defaultMediaType = 'tv';
+        break;
+      case 'upcoming':
+        endpoint = '/discover/movie';
+        params['primary_release_date.gte'] = todayStr;
+        params['primary_release_date.lte'] = futureStr;
+        params.sort_by = 'popularity.desc';
+        defaultMediaType = 'movie';
+        break;
+      case 'now_playing':
+        endpoint = '/movie/now_playing';
+        defaultMediaType = 'movie';
+        break;
+      case 'popular_tv':
+        endpoint = '/tv/popular';
+        defaultMediaType = 'tv';
+        break;
+      case 'family_movies':
+        endpoint = '/discover/movie';
+        params.with_genres = '10751'; // Family genre ID
+        params.sort_by = 'popularity.desc';
+        defaultMediaType = 'movie';
+        break;
+      case 'family_tv':
+        endpoint = '/discover/tv';
+        params.with_genres = '10751'; // Family genre ID
+        params.sort_by = 'popularity.desc';
+        defaultMediaType = 'tv';
+        break;
+      case 'documentary_movies':
+        endpoint = '/discover/movie';
+        params.with_genres = '99'; // Documentary genre ID
+        params.sort_by = 'popularity.desc';
+        defaultMediaType = 'movie';
+        break;
+      case 'comedy_movies':
+        endpoint = '/discover/movie';
+        params.with_genres = '35'; // Comedy genre ID
+        params.sort_by = 'popularity.desc';
+        defaultMediaType = 'movie';
+        break;
+      case 'romcom_movies':
+        endpoint = '/discover/movie';
+        params.with_genres = '35,10749'; // Comedy AND Romance
+        params.sort_by = 'popularity.desc';
+        defaultMediaType = 'movie';
+        break;
+      case 'trending':
+      default:
+        endpoint = '/trending/all/week';
+        break;
+    }
   }
 
   try {

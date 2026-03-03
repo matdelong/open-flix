@@ -38,12 +38,21 @@ function App() {
   // Discover / Trending
   const [trendingMedia, setTrendingMedia] = useState<Media[]>([]);
   const [isTrendingModalOpen, setIsTrendingModalOpen] = useState(false);
-  const [discoverFilter, setDiscoverFilter] = useState('trending');
+  const [discoverFilter, setDiscoverFilter] = useState('custom');
   const [discoverPage, setDiscoverPage] = useState(1);
+  const [hasMoreDiscover, setHasMoreDiscover] = useState(true);
   const [isLoadingDiscover, setIsLoadingDiscover] = useState(false);
   const [previewMedia, setPreviewMedia] = useState<Media | null>(null); // For previewing TMDB items
   const [tmdbEnabled, setTmdbEnabled] = useState(false);
   const [rowScrollPositions, setRowScrollPositions] = useState<Record<string, number>>({});
+  
+  const [customFilters, setCustomFilters] = useState({
+    type: 'movie',
+    genre: '',
+    minRating: '',
+    yearFrom: '',
+    yearTo: ''
+  });
 
   useEffect(() => {
     fetch('/api/config')
@@ -85,17 +94,14 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        if (isModalOpen) {
-          closeModal();
-        }
-        if (isTagsModalOpen) {
-          closeTagsModal();
-        }
-        if (isTrendingModalOpen) {
-          setIsTrendingModalOpen(false);
-        }
         if (previewMedia) {
           closePreview();
+        } else if (isTagsModalOpen) {
+          closeTagsModal();
+        } else if (isModalOpen) {
+          closeModal();
+        } else if (isTrendingModalOpen) {
+          setIsTrendingModalOpen(false);
         }
       }
     };
@@ -269,21 +275,45 @@ function App() {
     }
   };
 
-  const fetchDiscover = async (filter: string = 'trending', page: number = 1) => {
+  const openDiscoverModal = () => {
+    closeModal();
+    const resetFilters = { type: 'movie', genre: '', minRating: '', yearFrom: '', yearTo: '' };
+    setCustomFilters(resetFilters);
+    setDiscoverFilter('trending');
+    fetchDiscover('trending', 1, resetFilters);
+    setIsTrendingModalOpen(true);
+  };
+
+  const fetchDiscover = async (filter: string = 'custom', page: number = 1, overrideFilters?: any) => {
     if (isLoadingDiscover) return;
     setIsLoadingDiscover(true);
     
     if (filter !== discoverFilter || page === 1) {
         setDiscoverFilter(filter);
         setDiscoverPage(1);
+        setHasMoreDiscover(true);
         if (page === 1) setTrendingMedia([]);
     }
 
     try {
-      const res = await fetch(`/api/recommendations/discover?filter=${filter}&page=${page}&count=1`);
+      let url = `/api/recommendations/discover?filter=${filter}&page=${page}&count=1`;
+      if (filter === 'custom') {
+          const filters = overrideFilters || customFilters;
+          url += `&type=${filters.type}`;
+          if (filters.genre) url += `&genres=${filters.genre}`;
+          if (filters.minRating) url += `&min_rating=${filters.minRating}`;
+          if (filters.yearFrom) url += `&year_from=${filters.yearFrom}`;
+          if (filters.yearTo) url += `&year_to=${filters.yearTo}`;
+      }
+      
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         
+        if (data.length === 0) {
+            setHasMoreDiscover(false);
+        }
+
         // Create a Set of existing titles for faster lookup
         const existingTitles = new Set(allMedia.map(m => m.title.toLowerCase()));
 
@@ -303,7 +333,6 @@ function App() {
             const newUniqueItems = formatted.filter(item => !existingIds.has(item.id));
             return [...prev, ...newUniqueItems];
         });
-        if (page === 1) setIsTrendingModalOpen(true);
       }
     } catch (err) {
       console.error("Failed to fetch discover:", err);
@@ -312,9 +341,15 @@ function App() {
     }
   };
 
+  const handleCustomFilterChange = (key: string, value: string) => {
+    const newFilters = { ...customFilters, [key]: value };
+    setCustomFilters(newFilters);
+    fetchDiscover('custom', 1, newFilters);
+  };
+
   const handleDiscoverScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    if (scrollHeight - scrollTop - clientHeight < 300 && !isLoadingDiscover) {
+    if (scrollHeight - scrollTop - clientHeight < 300 && !isLoadingDiscover && hasMoreDiscover) {
         const nextPage = discoverPage + 1;
         setDiscoverPage(nextPage);
         fetchDiscover(discoverFilter, nextPage);
@@ -322,13 +357,19 @@ function App() {
   };
 
   const handlePreview = (media: Media) => {
-    setPreviewMedia(media);
-    setIsSearchOpen(false); // Close search if open
-    // Keep discover modal open behind preview so we can return to it? 
-    // Or close it? The user might want to browse more.
-    // Let's keep it open but hidden or just rely on z-index?
-    // If we set isTrendingModalOpen(false), we lose context.
-    // Let's keep it true.
+    const existing = allMedia.find(m => 
+      m.title.toLowerCase() === media.title.toLowerCase() && 
+      (m.year === media.year || !media.year || !m.year)
+    );
+
+    if (existing) {
+      setSelectedMediaId(existing.id);
+      setIsSearchOpen(false);
+      setPreviewMedia(null);
+    } else {
+      setPreviewMedia(media);
+      setIsSearchOpen(false); 
+    }
   };
 
   const closePreview = () => {
@@ -412,95 +453,97 @@ function App() {
     return <SignIn onSignIn={() => setIsAuthenticated(true)} />;
   }
 
-  if (selectedMediaId) {
-    return <MediaDetail mediaId={selectedMediaId} onClose={handleCloseDetail} />;
-  }
-
   return (
     <div className="App">
-      <header className="app-header">
-        <div className="header-left">
-          <h1>Open Flix</h1>
-          <nav className="tabs">
-            <button onClick={() => setActiveTab('tv_show')} className={activeTab === 'tv_show' ? 'active' : ''}>TV Shows</button>
-            <button onClick={() => setActiveTab('movie')} className={activeTab === 'movie' ? 'active' : ''}>Movies</button>
-          </nav>
-        </div>
-        <div className="header-actions">
-          <div className={`search-container ${isSearchOpen ? 'open' : ''}`} id="search-container">
-            <button className="search-icon-button" onClick={toggleSearch}>
-              <Search size={20} />
-            </button>
-            {isSearchOpen && (
-              <input
-                id="search-input"
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                className="search-input"
-              />
-            )}
-            {(searchResults.length > 0 || remoteSearchResults.length > 0) && (
-              <ul className="search-results">
-                {searchResults.length > 0 && <li className="search-section-header">Library</li>}
-                {searchResults.map(result => (
-                  <li key={`local-${result.id}`} onClick={() => {
-                    setActiveTab(result.type);
-                    setSelectedMediaId(result.id);
-                    setIsSearchOpen(false);
-                    setSearchQuery('');
-                    setSearchResults([]);
-                    setRemoteSearchResults([]);
-                  }}>
-                    <img src={result.poster_url || ''} alt={result.title} />
-                    <div>
-                      <span className="search-result-title">{result.title}</span>
-                      <span className="search-result-year">({result.year})</span>
-                    </div>
-                  </li>
-                ))}
-                {remoteSearchResults.length > 0 && <li className="search-section-header">Add to Library</li>}
-                {remoteSearchResults.map(result => (
-                  <li key={`remote-${result.id}`} onClick={() => handlePreview(result)}>
-                    <img src={result.poster_url || ''} alt={result.title} />
-                    <div>
-                      <span className="search-result-title">{result.title}</span>
-                      <span className="search-result-year">({result.year})</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <button id="manage-tags-button" onClick={openTagsModal}>Manage Tags</button>
-          <button id="add-media-button" onClick={openModal}>Add Media</button>
-        </div>
-      </header>
-      <main>
-        {filteredCategories.map(category => {
-          const itemsForCategory = groupedMedia[category].filter(item => item.type === activeTab);
-          return (
-            <MediaRow 
-              key={category}
-              title={category}
-              media={itemsForCategory}
-              onCardClick={handleCardClick}
-              initialScrollLeft={rowScrollPositions[category] || 0}
-              onScroll={(left) => handleRowScroll(category, left)}
-            />
-          )
-        })}
-      </main>
+      {!selectedMediaId ? (
+        <>
+          <header className="app-header">
+            <div className="header-left">
+              <h1>Open Flix</h1>
+              <nav className="tabs">
+                <button onClick={() => setActiveTab('tv_show')} className={activeTab === 'tv_show' ? 'active' : ''}>TV Shows</button>
+                <button onClick={() => setActiveTab('movie')} className={activeTab === 'movie' ? 'active' : ''}>Movies</button>
+              </nav>
+            </div>
+            <div className="header-actions">
+              <div className={`search-container ${isSearchOpen ? 'open' : ''}`} id="search-container">
+                <button className="search-icon-button" onClick={toggleSearch}>
+                  <Search size={20} />
+                </button>
+                {isSearchOpen && (
+                  <input
+                    id="search-input"
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    className="search-input"
+                  />
+                )}
+                {(searchResults.length > 0 || remoteSearchResults.length > 0) && (
+                  <ul className="search-results">
+                    {searchResults.length > 0 && <li className="search-section-header">Library</li>}
+                    {searchResults.map(result => (
+                      <li key={`local-${result.id}`} onClick={() => {
+                        setActiveTab(result.type);
+                        setSelectedMediaId(result.id);
+                        setIsSearchOpen(false);
+                        setSearchQuery('');
+                        setSearchResults([]);
+                        setRemoteSearchResults([]);
+                      }}>
+                        <img src={result.poster_url || ''} alt={result.title} />
+                        <div>
+                          <span className="search-result-title">{result.title}</span>
+                          <span className="search-result-year">({result.year})</span>
+                        </div>
+                      </li>
+                    ))}
+                    {remoteSearchResults.length > 0 && <li className="search-section-header">Add to Library</li>}
+                    {remoteSearchResults.map(result => (
+                      <li key={`remote-${result.id}`} onClick={() => handlePreview(result)}>
+                        <img src={result.poster_url || ''} alt={result.title} />
+                        <div>
+                          <span className="search-result-title">{result.title}</span>
+                          <span className="search-result-year">({result.year})</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button id="manage-tags-button" onClick={openTagsModal}>Manage Tags</button>
+              <button id="add-media-button" onClick={openModal}>Add Media</button>
+            </div>
+          </header>
+          <main>
+            {filteredCategories.map(category => {
+              const itemsForCategory = groupedMedia[category].filter(item => item.type === activeTab);
+              return (
+                <MediaRow 
+                  key={category}
+                  title={category}
+                  media={itemsForCategory}
+                  onCardClick={handleCardClick}
+                  initialScrollLeft={rowScrollPositions[category] || 0}
+                  onScroll={(left) => handleRowScroll(category, left)}
+                />
+              )
+            })}
+          </main>
 
-      <div style={{ textAlign: 'center', margin: '2rem 0', opacity: 0.5, display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-        <button onClick={() => { fetchDiscover('trending', 1); setIsTrendingModalOpen(true); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
-          Discover More
-        </button>
-        <button onClick={handleSignOut} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
-          Sign Out
-        </button>
-      </div>
+          <div style={{ textAlign: 'center', margin: '2rem 0', opacity: 0.5, display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+            <button onClick={openDiscoverModal} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
+              Discover More
+            </button>
+            <button onClick={handleSignOut} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>
+              Sign Out
+            </button>
+          </div>
+        </>
+      ) : (
+        <MediaDetail mediaId={selectedMediaId} onClose={handleCloseDetail} onPreview={handlePreview} isPreviewOpen={!!previewMedia} />
+      )}
 
       {isTrendingModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsTrendingModalOpen(false)}>
@@ -509,38 +552,59 @@ function App() {
               <button className="close-button" onClick={() => setIsTrendingModalOpen(false)}>&times;</button>
               <h2 style={{ marginBottom: '1rem' }}>Discover Media</h2>
               
-              <div className="discover-filters">
-                <select 
-                  className="mobile-filters" 
-                  value={discoverFilter} 
-                  onChange={(e) => fetchDiscover(e.target.value, 1)}
-                >
-                  <option value="trending">Trending</option>
-                  <option value="top_rated_movies">Top Rated Movies</option>
-                  <option value="top_rated_tv">Top Rated TV</option>
-                  <option value="upcoming">Coming Soon</option>
-                  <option value="now_playing">In Theaters</option>
-                  <option value="popular_tv">Popular TV</option>
-                  <option value="family_movies">Family Movies</option>
-                  <option value="family_tv">Family TV</option>
-                  <option value="documentary_movies">Documentaries</option>
-                  <option value="comedy_movies">Comedy</option>
-                  <option value="romcom_movies">Rom-Com</option>
+              <div className="discover-filters" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
+                <select value={customFilters.type} onChange={(e) => handleCustomFilterChange('type', e.target.value)} style={{ background: '#333', color: 'white', padding: '0.5rem', borderRadius: '4px', border: 'none', flex: '1 1 auto' }}>
+                  <option value="movie">Movies</option>
+                  <option value="tv">TV Shows</option>
                 </select>
-
-                <div className="desktop-filters">
-                  <button className={discoverFilter === 'trending' ? 'active' : ''} onClick={() => fetchDiscover('trending', 1)}>Trending</button>
-                  <button className={discoverFilter === 'top_rated_movies' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_movies', 1)}>Top Rated Movies</button>
-                  <button className={discoverFilter === 'top_rated_tv' ? 'active' : ''} onClick={() => fetchDiscover('top_rated_tv', 1)}>Top Rated TV</button>
-                  <button className={discoverFilter === 'upcoming' ? 'active' : ''} onClick={() => fetchDiscover('upcoming', 1)}>Coming Soon</button>
-                  <button className={discoverFilter === 'now_playing' ? 'active' : ''} onClick={() => fetchDiscover('now_playing', 1)}>In Theaters</button>
-                  <button className={discoverFilter === 'popular_tv' ? 'active' : ''} onClick={() => fetchDiscover('popular_tv', 1)}>Popular TV</button>
-                  <button className={discoverFilter === 'family_movies' ? 'active' : ''} onClick={() => fetchDiscover('family_movies', 1)}>Family Movies</button>
-                  <button className={discoverFilter === 'family_tv' ? 'active' : ''} onClick={() => fetchDiscover('family_tv', 1)}>Family TV</button>
-                  <button className={discoverFilter === 'documentary_movies' ? 'active' : ''} onClick={() => fetchDiscover('documentary_movies', 1)}>Documentaries</button>
-                  <button className={discoverFilter === 'comedy_movies' ? 'active' : ''} onClick={() => fetchDiscover('comedy_movies', 1)}>Comedy</button>
-                  <button className={discoverFilter === 'romcom_movies' ? 'active' : ''} onClick={() => fetchDiscover('romcom_movies', 1)}>Rom-Com</button>
-                </div>
+                <select value={customFilters.genre} onChange={(e) => handleCustomFilterChange('genre', e.target.value)} style={{ background: '#333', color: 'white', padding: '0.5rem', borderRadius: '4px', border: 'none', flex: '1 1 auto' }}>
+                  <option value="">Any Genre</option>
+                  <option value="28|12|10759">Action & Adventure</option>
+                  <option value="16">Animation</option>
+                  <option value="35">Comedy</option>
+                  <option value="80">Crime</option>
+                  <option value="99">Documentary</option>
+                  <option value="18">Drama</option>
+                  <option value="10751|10762">Family & Kids</option>
+                  <option value="14|878|10765">Sci-Fi & Fantasy</option>
+                  <option value="27">Horror</option>
+                  <option value="10749">Romance</option>
+                  <option value="35,10749">Romantic Comedy</option>
+                  <option value="53">Thriller</option>
+                </select>
+                <select value={customFilters.minRating} onChange={(e) => handleCustomFilterChange('minRating', e.target.value)} style={{ background: '#333', color: 'white', padding: '0.5rem', borderRadius: '4px', border: 'none', flex: '1 1 auto' }}>
+                  <option value="">Any Rating</option>
+                  <option value="6">6+ Stars</option>
+                  <option value="7">7+ Stars</option>
+                  <option value="8">8+ Stars</option>
+                </select>
+                <select value={customFilters.yearFrom} onChange={(e) => {
+                    const from = e.target.value;
+                    let to = '';
+                    if (from === 'this_year' || from === 'coming_soon') {
+                      to = from;
+                    } else if (from) {
+                      to = String(parseInt(from) + 9);
+                    }
+                    const newFilters = { ...customFilters, yearFrom: from, yearTo: to };
+                    setCustomFilters(newFilters);
+                    fetchDiscover('custom', 1, newFilters);
+                }} style={{ background: '#333', color: 'white', padding: '0.5rem', borderRadius: '4px', border: 'none', flex: '1 1 auto' }}>
+                  <option value="">Any Time</option>
+                  <option value="coming_soon">Coming Soon</option>
+                  <option value="this_year">This Year</option>
+                  <option value="2020">2020s</option>
+                  <option value="2010">2010s</option>
+                  <option value="2000">2000s</option>
+                  <option value="1990">1990s</option>
+                  <option value="1980">1980s</option>
+                </select>
+                <button onClick={() => { 
+                  const reset = { type: 'movie', genre: '', minRating: '', yearFrom: '', yearTo: '' };
+                  setCustomFilters(reset); 
+                  setDiscoverFilter('trending'); 
+                  fetchDiscover('trending', 1); 
+                }} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #555', color: '#fff', borderRadius: '4px', cursor: 'pointer', flex: '1 1 auto' }}>Reset</button>
               </div>
             </div>
 
@@ -560,14 +624,17 @@ function App() {
       )}
 
       {previewMedia && (
-        <div className="modal-backdrop">
+        <div className="modal-backdrop" style={{ zIndex: 1100 }}>
           <div className="modal-content preview-modal">
             <button className="close-button" onClick={closePreview}>&times;</button>
             <div className="preview-header">
                 {previewMedia.poster_url && <img src={previewMedia.poster_url} alt={previewMedia.title} className="preview-poster" />}
                 <div className="preview-info">
                     <h2>{previewMedia.title} ({previewMedia.year})</h2>
-                    <p className="preview-type">{previewMedia.type === 'movie' ? 'Movie' : 'TV Show'}</p>
+                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+                      <p className="preview-type" style={{ margin: 0 }}>{previewMedia.type === 'movie' ? 'Movie' : 'TV Show'}</p>
+                      {(previewMedia as any).rating && <span style={{ color: '#46d369', fontWeight: 'bold' }}>⭐ {(previewMedia as any).rating}</span>}
+                    </div>
                     <p className="preview-overview">{previewMedia.overview}</p>
                     <div className="modal-actions">
                         <button onClick={handleAddFromTMDB} disabled={isLoading}>
@@ -599,7 +666,7 @@ function App() {
                 {tmdbEnabled ? (
                   <button 
                     type="button" 
-                    onClick={() => { closeModal(); fetchDiscover('trending', 1); setIsTrendingModalOpen(true); }}
+                    onClick={openDiscoverModal}
                   >
                     Discover More
                   </button>

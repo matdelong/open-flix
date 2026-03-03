@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import './MediaDetail.css';
 import StreamingLinksModal from './StreamingLinksModal';
 
@@ -59,16 +59,32 @@ interface Tag {
 interface MediaDetailProps {
   mediaId: number;
   onClose: () => void;
+  onPreview?: (media: any) => void;
+  isPreviewOpen?: boolean;
 }
 
-const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
+const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, isPreviewOpen }) => {
   const [media, setMedia] = useState<MediaDetailData | null>(null);
   const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [recommendations, setRecommendations] = useState<any[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [isStreamingLinksModalOpen, setIsStreamingLinksModalOpen] = useState(false);
   const [collapsedSeasons, setCollapsedSeasons] = useState<Record<number, boolean>>({});
   const initializedMediaId = useRef<number | null>(null);
+  
+  const recScrollerRef = useRef<HTMLDivElement>(null);
+  const recScrollPos = useRef<number>(0);
+
+  useLayoutEffect(() => {
+    if (recScrollerRef.current) {
+      recScrollerRef.current.scrollLeft = recScrollPos.current;
+    }
+  });
+
+  const handleRecScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    recScrollPos.current = e.currentTarget.scrollLeft;
+  };
 
   useEffect(() => {
     if (media?.type === 'tv_show' && media.seasons && initializedMediaId.current !== media.id) {
@@ -76,14 +92,10 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
       const initialState: Record<number, boolean> = {};
       media.seasons.forEach(season => {
         const hasEpisodes = season.episodes.length > 0;
-        // Check if all aired episodes are watched (and there are actually aired episodes)
         const airedEpisodes = season.episodes.filter(ep => !ep.air_date || new Date(ep.air_date) <= new Date());
         const allAiredWatched = airedEpisodes.length > 0 && airedEpisodes.every(ep => ep.is_watched);
         const hasUnaired = season.episodes.some(ep => ep.air_date && new Date(ep.air_date) > new Date());
         
-        // Collapse if all aired episodes are watched AND there are no unaired episodes.
-        // Wait, user said "Seasons where all episodes are watched should be collapsed by default."
-        // If there are unaired episodes, they can't be watched, so the season shouldn't be collapsed.
         if (hasEpisodes && allAiredWatched && !hasUnaired) {
             initialState[season.id] = true;
         } else {
@@ -114,6 +126,18 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
     }
   };
 
+  const fetchRecommendations = async () => {
+    try {
+      const res = await fetch(`/api/media/${mediaId}/recommendations`);
+      if (res.ok) {
+        const data = await res.json();
+        setRecommendations(data.slice(0, 20)); // Limit to top 20
+      }
+    } catch (err) {
+      console.error('Failed to fetch recommendations', err);
+    }
+  };
+
   useEffect(() => {
     const fetchTags = async () => {
       try {
@@ -129,19 +153,20 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && !isPreviewOpen) {
         onClose();
       }
     };
 
     fetchDetails();
+    fetchRecommendations();
     fetchTags();
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [mediaId, onClose]);
+  }, [mediaId, onClose, isPreviewOpen]);
   
   const makeApiCall = async (url: string, method: string, body?: object) => {
     try {
@@ -438,6 +463,32 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose }) => {
                   </div>
                 );
               })}
+            </div>
+          </>
+        )}
+
+        {recommendations.length > 0 && (
+          <>
+            <h2 style={{ marginTop: '2rem' }}>More Like This</h2>
+            <div 
+              ref={recScrollerRef}
+              onScroll={handleRecScroll}
+              style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem' }}
+            >
+              {recommendations.map(rec => (
+                <div 
+                  key={rec.id} 
+                  style={{ minWidth: '120px', cursor: 'pointer', transition: 'transform 0.2s' }}
+                  onClick={() => onPreview && onPreview(rec)}
+                  title={rec.title}
+                >
+                  <img 
+                    src={rec.poster_url || ''} 
+                    alt={rec.title} 
+                    style={{ width: '120px', height: '180px', objectFit: 'cover', borderRadius: '8px' }} 
+                  />
+                </div>
+              ))}
             </div>
           </>
         )}
