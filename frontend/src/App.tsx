@@ -51,7 +51,8 @@ function App() {
     genre: '',
     minRating: '',
     yearFrom: '',
-    yearTo: ''
+    yearTo: '',
+    keywords: ''
   });
 
   useEffect(() => {
@@ -277,7 +278,7 @@ function App() {
 
   const openDiscoverModal = () => {
     closeModal();
-    const resetFilters = { type: 'movie', genre: '', minRating: '', yearFrom: '', yearTo: '' };
+    const resetFilters = { type: 'movie', genre: '', minRating: '', yearFrom: '', yearTo: '', keywords: '' };
     setCustomFilters(resetFilters);
     setDiscoverFilter('trending');
     fetchDiscover('trending', 1, resetFilters);
@@ -304,6 +305,7 @@ function App() {
           if (filters.minRating) url += `&min_rating=${filters.minRating}`;
           if (filters.yearFrom) url += `&year_from=${filters.yearFrom}`;
           if (filters.yearTo) url += `&year_to=${filters.yearTo}`;
+          if (filters.keywords) url += `&keywords=${encodeURIComponent(filters.keywords)}`;
       }
       
       const res = await fetch(url);
@@ -344,7 +346,15 @@ function App() {
   const handleCustomFilterChange = (key: string, value: string) => {
     const newFilters = { ...customFilters, [key]: value };
     setCustomFilters(newFilters);
-    fetchDiscover('custom', 1, newFilters);
+    if (key !== 'keywords') {
+      fetchDiscover('custom', 1, newFilters);
+    }
+  };
+
+  const handleKeywordSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      fetchDiscover('custom', 1, customFilters);
+    }
   };
 
   const handleDiscoverScroll = (e: React.UIEvent<HTMLDivElement>) => {
@@ -552,12 +562,20 @@ function App() {
               <button className="close-button" onClick={() => setIsTrendingModalOpen(false)}>&times;</button>
               <h2 style={{ marginBottom: '1rem' }}>Discover Media</h2>
               
-              <div className="discover-filters" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem', background: 'rgba(255,255,255,0.05)', padding: '0.5rem', borderRadius: '8px' }}>
-                <select value={customFilters.type} onChange={(e) => handleCustomFilterChange('type', e.target.value)} style={{ background: '#333', color: 'white', padding: '0.5rem', borderRadius: '4px', border: 'none', flex: '1 1 auto' }}>
+              <div className="discover-filters-container">
+                <input 
+                  type="text" 
+                  className="discover-filter-input"
+                  placeholder="Keywords..." 
+                  value={customFilters.keywords}
+                  onChange={(e) => setCustomFilters({...customFilters, keywords: e.target.value})}
+                  onKeyDown={handleKeywordSubmit}
+                />
+                <select className="discover-filter-select" value={customFilters.type} onChange={(e) => handleCustomFilterChange('type', e.target.value)}>
                   <option value="movie">Movies</option>
                   <option value="tv">TV Shows</option>
                 </select>
-                <select value={customFilters.genre} onChange={(e) => handleCustomFilterChange('genre', e.target.value)} style={{ background: '#333', color: 'white', padding: '0.5rem', borderRadius: '4px', border: 'none', flex: '1 1 auto' }}>
+                <select className="discover-filter-select" value={customFilters.genre} onChange={(e) => handleCustomFilterChange('genre', e.target.value)}>
                   <option value="">Any Genre</option>
                   <option value="28|12|10759">Action & Adventure</option>
                   <option value="16">Animation</option>
@@ -568,17 +586,18 @@ function App() {
                   <option value="10751|10762">Family & Kids</option>
                   <option value="14|878|10765">Sci-Fi & Fantasy</option>
                   <option value="27">Horror</option>
+                  <option value="10764">Reality</option>
                   <option value="10749">Romance</option>
                   <option value="35,10749">Romantic Comedy</option>
                   <option value="53">Thriller</option>
                 </select>
-                <select value={customFilters.minRating} onChange={(e) => handleCustomFilterChange('minRating', e.target.value)} style={{ background: '#333', color: 'white', padding: '0.5rem', borderRadius: '4px', border: 'none', flex: '1 1 auto' }}>
+                <select className="discover-filter-select" value={customFilters.minRating} onChange={(e) => handleCustomFilterChange('minRating', e.target.value)}>
                   <option value="">Any Rating</option>
                   <option value="6">6+ Stars</option>
                   <option value="7">7+ Stars</option>
                   <option value="8">8+ Stars</option>
                 </select>
-                <select value={customFilters.yearFrom} onChange={(e) => {
+                <select className="discover-filter-select" value={customFilters.yearFrom} onChange={(e) => {
                     const from = e.target.value;
                     let to = '';
                     if (from === 'this_year' || from === 'coming_soon') {
@@ -589,7 +608,7 @@ function App() {
                     const newFilters = { ...customFilters, yearFrom: from, yearTo: to };
                     setCustomFilters(newFilters);
                     fetchDiscover('custom', 1, newFilters);
-                }} style={{ background: '#333', color: 'white', padding: '0.5rem', borderRadius: '4px', border: 'none', flex: '1 1 auto' }}>
+                }}>
                   <option value="">Any Time</option>
                   <option value="coming_soon">Coming Soon</option>
                   <option value="this_year">This Year</option>
@@ -599,12 +618,12 @@ function App() {
                   <option value="1990">1990s</option>
                   <option value="1980">1980s</option>
                 </select>
-                <button onClick={() => { 
-                  const reset = { type: 'movie', genre: '', minRating: '', yearFrom: '', yearTo: '' };
+                <button className="discover-filter-button" onClick={() => { 
+                  const reset = { type: 'movie', genre: '', minRating: '', yearFrom: '', yearTo: '', keywords: '' };
                   setCustomFilters(reset); 
                   setDiscoverFilter('trending'); 
                   fetchDiscover('trending', 1); 
-                }} style={{ padding: '0.5rem 1rem', background: 'transparent', border: '1px solid #555', color: '#fff', borderRadius: '4px', cursor: 'pointer', flex: '1 1 auto' }}>Reset</button>
+                }}>Reset</button>
               </div>
             </div>
 

@@ -440,51 +440,70 @@ body.modal-open {
 }
 
 /* Discover Filters */
-.discover-filters {
-  margin-bottom: 1.5rem;
+.discover-filters-container {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.75rem;
+  border-radius: 8px;
 }
 
-.mobile-filters {
-  display: none; /* Hidden by default */
-  width: 100%;
-  padding: 0.75rem;
-  background-color: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
+.discover-filter-input,
+.discover-filter-select,
+.discover-filter-button {
+  height: 40px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.discover-filter-input {
+  background: #333;
   color: white;
-  font-size: 1rem;
-  appearance: none; /* Remove default arrow */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 0 12px;
+  flex: 2 1 150px;
+  outline: none;
+}
+
+.discover-filter-input:focus {
+  border-color: #646cff;
+}
+
+.discover-filter-select {
+  background: #333;
+  color: white;
+  border: 1px solid transparent;
+  padding: 0 12px;
+  flex: 1 1 auto;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
   background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
   background-repeat: no-repeat;
   background-position: right 0.7rem top 50%;
   background-size: 0.65rem auto;
+  padding-right: 2rem;
 }
 
-.desktop-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.desktop-filters button {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0.5rem 1rem;
-  border-radius: 20px;
-  color: #ddd;
+.discover-filter-button {
+  background: transparent;
+  border: 1px solid #555;
+  color: #fff;
+  padding: 0 16px;
   cursor: pointer;
-  transition: all 0.2s;
-  font-size: 0.9rem;
+  flex: 0 1 auto;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.desktop-filters button:hover {
+.discover-filter-button:hover {
   background: rgba(255, 255, 255, 0.1);
-}
-
-.desktop-filters button.active {
-  background: #646cff;
-  color: white;
-  border-color: #646cff;
 }
 
 .trending-grid {
@@ -596,12 +615,21 @@ body.modal-open {
     margin-bottom: 0.75rem;
   }
 
-  .desktop-filters {
-    display: none;
+  .discover-filters-container {
+    gap: 0.35rem;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
   }
 
-  .mobile-filters {
-    display: block;
+  .discover-filter-input {
+    flex: 1 1 100%; /* Force input to take full width on mobile */
+  }
+
+  .discover-filter-select,
+  .discover-filter-button {
+    font-size: 0.8rem;
+    height: 38px;
+    padding: 0 8px;
   }
 
   .modal-body-scrollable {

@@ -910,7 +910,7 @@ app.get('/api/recommendations/discover', async (req, res) => {
     return res.status(503).json({ error: 'TMDB API key not configured' });
   }
 
-  const { filter, page = 1, count = 3, type, genres, min_rating, year_from, year_to } = req.query;
+  const { filter, page = 1, count = 3, type, genres, min_rating, year_from, year_to, keywords } = req.query;
   let endpoint = '/trending/all/week';
   let defaultMediaType = null; // To infer type if missing
   let params = {
@@ -934,6 +934,24 @@ app.get('/api/recommendations/discover', async (req, res) => {
       params['vote_average.gte'] = min_rating;
       params['vote_count.gte'] = 50; // Filter out obscure items with 1 10-star vote
     }
+    
+    if (keywords) {
+      try {
+        const keywordRes = await axios.get(`${TMDB_BASE_URL}/search/keyword`, {
+          params: { api_key: TMDB_API_KEY, query: keywords, page: 1 }
+        });
+        if (keywordRes.data.results && keywordRes.data.results.length > 0) {
+          // Take the top matching keyword ID
+          params.with_keywords = keywordRes.data.results[0].id;
+        } else {
+           // If keyword not found on TMDB, return empty list immediately
+           return res.json([]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch keyword ID:", err.message);
+      }
+    }
+
     if (year_from === 'coming_soon') {
       if (type === 'tv') {
         params['first_air_date.gte'] = todayStr;
