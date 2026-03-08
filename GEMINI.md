@@ -10,7 +10,7 @@ This is a full-stack monorepo, containerized with Docker.
 
 *   **Frontend:** React with TypeScript, built using Vite.
 *   **Backend:** Node.js with Express.
-*   **Data Sources:** The Movie Database (TMDB) API for rich metadata and discovery, and epguides.com for TV episode scraping.
+*   **Data Sources:** The Movie Database (TMDB) API for rich metadata, discovery, and TV episode information.
 *   **Database:** PostgreSQL.
 *   **Orchestration:** Docker Compose.
 
@@ -35,8 +35,8 @@ The application is a functional, feature-rich dashboard with a modern, responsiv
     *   `POST /api/media` accepts an IMDB URL or TMDB ID. It relies on a configured `TMDB_API_KEY` to fetch rich metadata (Title, Year, Poster, Description, Rating, Genres, Actors) securely and reliably, bypassing aggressive anti-bot protections previously encountered with direct IMDB HTML scraping.
     *   `GET /api/search/tmdb`: Proxies multi-search requests to TMDB.
     *   `GET /api/recommendations/discover`: Fetches paginated lists of trending, popular, and genre-specific (e.g., Family, Comedy) content.
-*   **TV Episode Scraper:**
-    *   Still utilizes `epguides.com` via `cheerio` to fetch comprehensive Season and Episode lists for TV shows.
+*   **TV Episode Data:**
+    *   Utilizes the TMDB API to fetch comprehensive Season and Episode lists for TV shows.
 *   **Data Management:**
     *   Endpoints for CRUD operations on Media, Tags, and Streaming Links.
     *   `GET /api/media/grouped` returns content organized by category for the main view.
@@ -66,7 +66,7 @@ The application is a functional, feature-rich dashboard with a modern, responsiv
 
 ## Recent Technical Updates
 
-*   **Complete TMDB Migration:** Removed all fragile IMDB HTML scraping logic (`cheerio`) for metadata extraction due to AWS WAF blocks. All media addition now strictly requires and utilizes the TMDB API.
+*   **Complete TMDB Migration:** Removed all fragile IMDB and epguides.com HTML scraping logic (`cheerio`) for metadata and episode extraction. All media and episode data now strictly requires and utilizes the TMDB API.
 *   **Discovery Architecture:** Implemented paginated backend endpoints (`count`, `page`) and frontend infinite scroll with deduplication logic.
 *   **Mobile UI Overhaul:** Refactored the Discover modal to use a compact `<select>` dropdown for filters and a denser 3-column grid on mobile devices.
 *   **UX Polish:** Implemented scroll restoration for both horizontal media rows and the main vertical window scroll to maintain user context. Updated streaming links to use reliable SVG logos (unpkg/Iconify/Wikimedia).

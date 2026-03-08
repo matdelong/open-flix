@@ -62,7 +62,7 @@ const initDb = async () => {
         epguides_url TEXT
       );
     `);
-    
+
     // Add extra rich metadata columns if they don't exist
     await client.query(`
       ALTER TABLE media
@@ -213,7 +213,7 @@ app.post('/api/media', async (req, res) => {
       const findRes = await axios.get(`https://api.themoviedb.org/3/find/${imdbId}`, {
         params: { api_key: process.env.TMDB_API_KEY, external_source: 'imdb_id' }
       });
-      
+
       let tmdbItem = null;
       let tmdbType = null;
       if (findRes.data.movie_results.length > 0) {
@@ -238,12 +238,12 @@ app.post('/api/media', async (req, res) => {
         poster_url = d.poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${d.poster_path}` : null;
         rating = d.vote_average ? d.vote_average.toFixed(1).toString() : null;
         mediaType = tmdbType === 'tv' ? 'tv_show' : 'movie';
-        
+
         backdrop_url = d.backdrop_path ? `https://image.tmdb.org/t/p/w1280${d.backdrop_path}` : null;
         status = d.status || null;
         tagline = d.tagline || null;
         runtime = d.runtime || (d.episode_run_time && d.episode_run_time[0]) || null;
-        
+
         if (d.videos && d.videos.results) {
           const trailer = d.videos.results.find(v => v.type === 'Trailer' && v.site === 'YouTube');
           if (trailer) trailer_url = `https://www.youtube.com/watch?v=${trailer.key}`;
@@ -282,14 +282,14 @@ app.post('/api/media', async (req, res) => {
               if (name === 'Apple TV Plus') name = 'Apple TV+';
               if (name === 'Paramount Plus') name = 'Paramount+';
               if (name === 'Peacock Premium') name = 'Peacock';
-              
+
               if (allowedPlatforms.includes(name) && !watch_providers.some(wp => wp.platform === name)) {
                 watch_providers.push({ platform: name, url: link });
               }
             });
           }
         }
-        
+
         if (d.genres) genres = d.genres.map(g => g.name);
         if (d.credits && d.credits.cast) actors = d.credits.cast.slice(0, 10).map(c => c.name);
       } else {
@@ -331,7 +331,7 @@ app.post('/api/media', async (req, res) => {
       }
       await client.query('INSERT INTO media_genres (media_id, genre_id) VALUES ($1, $2)', [newMedia.id, genreId]);
     }
-    
+
     for (const name of actors) {
       if (!name) continue;
       let actorRes = await client.query('SELECT id FROM actors WHERE name = $1', [name]);
@@ -345,54 +345,54 @@ app.post('/api/media', async (req, res) => {
       await client.query('INSERT INTO media_actors (media_id, actor_id) VALUES ($1, $2)', [newMedia.id, actorId]);
     }
 
-      if (mediaType === 'tv_show' && globalTmdbId) {
-        try {
-          console.log(`Fetching seasons and episodes from TMDB for TV Show ID: ${globalTmdbId}`);
-          const tvRes = await axios.get(`https://api.themoviedb.org/3/tv/${globalTmdbId}`, {
+    if (mediaType === 'tv_show' && globalTmdbId) {
+      try {
+        console.log(`Fetching seasons and episodes from TMDB for TV Show ID: ${globalTmdbId}`);
+        const tvRes = await axios.get(`https://api.themoviedb.org/3/tv/${globalTmdbId}`, {
+          params: { api_key: process.env.TMDB_API_KEY }
+        });
+        const seasons = tvRes.data.seasons;
+
+        for (const season of seasons) {
+          if (season.season_number === 0) continue; // Skip specials by default
+
+          const yearForSeason = season.air_date ? parseInt(season.air_date.substring(0, 4), 10) : null;
+          const seasonRes = await client.query(
+            'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
+            [newMedia.id, season.season_number, yearForSeason]
+          );
+          const seasonIdForEpisode = seasonRes.rows[0].id;
+          console.log(`Added Season ${season.season_number} for ${title}`);
+
+          const seasonDetailRes = await axios.get(`https://api.themoviedb.org/3/tv/${globalTmdbId}/season/${season.season_number}`, {
             params: { api_key: process.env.TMDB_API_KEY }
           });
-          const seasons = tvRes.data.seasons;
+          const episodes = seasonDetailRes.data.episodes;
 
-          for (const season of seasons) {
-            if (season.season_number === 0) continue; // Skip specials by default
-            
-            const yearForSeason = season.air_date ? parseInt(season.air_date.substring(0, 4), 10) : null;
-            const seasonRes = await client.query(
-              'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
-              [newMedia.id, season.season_number, yearForSeason]
+          for (const ep of episodes) {
+            await client.query(
+              'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
+              [seasonIdForEpisode, ep.episode_number, ep.name, ep.air_date ? new Date(ep.air_date) : null]
             );
-            const seasonIdForEpisode = seasonRes.rows[0].id;
-            console.log(`Added Season ${season.season_number} for ${title}`);
-
-            const seasonDetailRes = await axios.get(`https://api.themoviedb.org/3/tv/${globalTmdbId}/season/${season.season_number}`, {
-              params: { api_key: process.env.TMDB_API_KEY }
-            });
-            const episodes = seasonDetailRes.data.episodes;
-
-            for (const ep of episodes) {
-              await client.query(
-                'INSERT INTO episodes (season_id, episode_number, title, air_date) VALUES ($1, $2, $3, $4)',
-                [seasonIdForEpisode, ep.episode_number, ep.name, ep.air_date ? new Date(ep.air_date) : null]
-              );
-              console.log(`  Added S${season.season_number}E${ep.episode_number}: ${ep.name}`);
-            }
+            console.log(`  Added S${season.season_number}E${ep.episode_number}: ${ep.name}`);
           }
-        } catch (tmdbErr) {
-          console.error("Failed to fetch episodes from TMDB.", tmdbErr.message);
         }
+      } catch (tmdbErr) {
+        console.error("Failed to fetch episodes from TMDB.", tmdbErr.message);
       }
-
-      await client.query('COMMIT');
-      res.status(201).json(newMedia);
-
-    } catch (error) {
-      await client.query('ROLLBACK');
-      console.error('Scraping or DB error:', error);
-      res.status(500).json({ error: 'Failed to scrape or save media.' });
-    } finally {
-      client.release();
     }
-  });
+
+    await client.query('COMMIT');
+    res.status(201).json(newMedia);
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Scraping or DB error:', error);
+    res.status(500).json({ error: 'Failed to scrape or save media.' });
+  } finally {
+    client.release();
+  }
+});
 
 app.get('/api/media/grouped', async (req, res) => {
   try {
@@ -720,21 +720,20 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
     }
     const media = mediaRes.rows[0];
 
-    if (media.type !== 'tv_show') {
-      return res.status(400).json({ error: 'Cannot rescrape a movie.' });
-    }
-
     if (!process.env.TMDB_API_KEY) {
       return res.status(503).json({ error: 'TMDB API key is required to rescrape media.' });
     }
 
     // Find the TMDB ID using the IMDB ID
     let tmdbId = null;
+    let tmdbType = media.type === 'movie' ? 'movie' : 'tv';
     try {
       const findRes = await axios.get(`https://api.themoviedb.org/3/find/${media.imdb_id}`, {
         params: { api_key: process.env.TMDB_API_KEY, external_source: 'imdb_id' }
       });
-      if (findRes.data.tv_results.length > 0) {
+      if (tmdbType === 'movie' && findRes.data.movie_results.length > 0) {
+        tmdbId = findRes.data.movie_results[0].id;
+      } else if (tmdbType === 'tv' && findRes.data.tv_results.length > 0) {
         tmdbId = findRes.data.tv_results[0].id;
       }
     } catch (e) {
@@ -742,55 +741,185 @@ app.post('/api/media/:id/rescrape', async (req, res) => {
     }
 
     if (!tmdbId) {
-       return res.status(404).json({ error: 'Could not find TMDB ID for this media to rescrape.' });
+      return res.status(404).json({ error: 'Could not find TMDB ID for this media to rescrape.' });
     }
+
+    // Fetch full TMDB details
+    let detailRes;
+    try {
+      detailRes = await axios.get(`https://api.themoviedb.org/3/${tmdbType}/${tmdbId}`, {
+        params: { api_key: process.env.TMDB_API_KEY, append_to_response: 'credits,videos,release_dates,content_ratings,watch/providers' }
+      });
+    } catch (e) {
+      console.error("Failed to fetch full TMDB details for rescrape", e.message);
+      return res.status(500).json({ error: 'Failed to fetch details from TMDB.' });
+    }
+    const d = detailRes.data;
 
     await client.query('BEGIN');
 
-    // Get existing watched episodes
-    const watchedEpisodesRes = await client.query(`
+    // Update base media info
+    const title = d.title || d.name;
+    const dateStr = d.release_date || d.first_air_date;
+    const year = dateStr ? parseInt(dateStr.substring(0, 4), 10) : null;
+    const description = d.overview;
+    const poster_url = d.poster_path ? `https://image.tmdb.org/t/p/w600_and_h900_bestv2${d.poster_path}` : null;
+    const rating = d.vote_average ? d.vote_average.toFixed(1).toString() : null;
+
+    const backdrop_url = d.backdrop_path ? `https://image.tmdb.org/t/p/w1280${d.backdrop_path}` : null;
+    const status = d.status || null;
+    const tagline = d.tagline || null;
+    const runtime = d.runtime || (d.episode_run_time && d.episode_run_time[0]) || null;
+
+    let trailer_url = media.trailer_url; // Default to existing if not updated
+    if (d.videos && d.videos.results) {
+      const trailer = d.videos.results.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+      if (trailer) trailer_url = `https://www.youtube.com/watch?v=${trailer.key}`;
+    }
+
+    let age_rating = media.age_rating;
+    if (tmdbType === 'movie' && d.release_dates && d.release_dates.results) {
+      const usRelease = d.release_dates.results.find(r => r.iso_3166_1 === 'US');
+      if (usRelease && usRelease.release_dates && usRelease.release_dates.length > 0) {
+        age_rating = usRelease.release_dates[0].certification || age_rating;
+      }
+    } else if (tmdbType === 'tv' && d.content_ratings && d.content_ratings.results) {
+      const usRating = d.content_ratings.results.find(r => r.iso_3166_1 === 'US');
+      if (usRating) age_rating = usRating.rating || age_rating;
+    }
+
+    let networks = [];
+    if (tmdbType === 'tv' && d.networks) {
+      networks = d.networks.map(n => n.name);
+    } else if (tmdbType === 'movie' && d.production_companies) {
+      networks = d.production_companies.map(p => p.name);
+    }
+
+    let creators = [];
+    if (tmdbType === 'tv' && d.created_by) {
+      creators = d.created_by.map(c => c.name);
+    } else if (tmdbType === 'movie' && d.credits && d.credits.crew) {
+      creators = d.credits.crew.filter(c => c.job === 'Director').map(c => c.name);
+    }
+
+    await client.query(
+      `UPDATE media SET 
+        title = $1, poster_url = $2, description = $3, year = $4, rating = $5, 
+        backdrop_url = $6, trailer_url = $7, status = $8, age_rating = $9, 
+        runtime = $10, tagline = $11, networks = $12, creators = $13
+       WHERE id = $14`,
+      [title, poster_url, description, year, rating, backdrop_url, trailer_url, status, age_rating, runtime, tagline, networks.join(', '), creators.join(', '), id]
+    );
+
+    // Update genres completely
+    await client.query('DELETE FROM media_genres WHERE media_id = $1', [id]);
+    const genres = d.genres ? d.genres.map(g => g.name) : [];
+    for (const name of genres) {
+      let genreRes = await client.query('SELECT id FROM genres WHERE name = $1', [name]);
+      let genreId;
+      if (genreRes.rowCount === 0) {
+        genreRes = await client.query('INSERT INTO genres (name) VALUES ($1) RETURNING id', [name]);
+        genreId = genreRes.rows[0].id;
+      } else {
+        genreId = genreRes.rows[0].id;
+      }
+      await client.query('INSERT INTO media_genres (media_id, genre_id) VALUES ($1, $2)', [id, genreId]);
+    }
+
+    // Update actors completely
+    await client.query('DELETE FROM media_actors WHERE media_id = $1', [id]);
+    const actors = (d.credits && d.credits.cast) ? d.credits.cast.slice(0, 10).map(c => c.name) : [];
+    for (const name of actors) {
+      if (!name) continue;
+      let actorRes = await client.query('SELECT id FROM actors WHERE name = $1', [name]);
+      let actorId;
+      if (actorRes.rowCount === 0) {
+        actorRes = await client.query('INSERT INTO actors (name) VALUES ($1) RETURNING id', [name]);
+        actorId = actorRes.rows[0].id;
+      } else {
+        actorId = actorRes.rows[0].id;
+      }
+      await client.query('INSERT INTO media_actors (media_id, actor_id) VALUES ($1, $2)', [id, actorId]);
+    }
+
+    // Process new streaming links without deleting existing ones
+    // Only insert if a platform doesn't already exist for this media
+    if (d['watch/providers'] && d['watch/providers'].results && d['watch/providers'].results.US) {
+      const usProviders = d['watch/providers'].results.US;
+      const link = usProviders.link;
+      if (usProviders.flatrate) {
+        const allowedPlatforms = ['Netflix', 'Amazon Prime Video', 'Disney+', 'Hulu', 'Max', 'Apple TV+', 'Paramount+', 'Peacock', 'BBC iPlayer', 'Channel 4'];
+
+        // Fetch existing platforms
+        const existingLinksRes = await client.query('SELECT platform FROM streaming_links WHERE media_id = $1', [id]);
+        const existingPlatforms = existingLinksRes.rows.map(r => r.platform);
+
+        for (const p of usProviders.flatrate) {
+          let name = p.provider_name;
+          if (name === 'Disney Plus') name = 'Disney+';
+          if (name === 'Apple TV Plus') name = 'Apple TV+';
+          if (name === 'Paramount Plus') name = 'Paramount+';
+          if (name === 'Peacock Premium') name = 'Peacock';
+
+          if (allowedPlatforms.includes(name) && !existingPlatforms.includes(name)) {
+            await client.query(
+              'INSERT INTO streaming_links (media_id, url, platform) VALUES ($1, $2, $3)',
+              [id, link, name]
+            );
+            existingPlatforms.push(name); // So we don't insert duplicate new links
+          }
+        }
+      }
+    }
+
+    // If it's a TV show, rescrape episodes
+    if (media.type === 'tv_show') {
+
+      // Get existing watched episodes
+      const watchedEpisodesRes = await client.query(`
       SELECT s.season_number, e.episode_number
       FROM episodes e
       JOIN seasons s ON e.season_id = s.id
       WHERE s.media_id = $1 AND e.is_watched = TRUE
     `, [id]);
-    const watchedEpisodes = new Set(watchedEpisodesRes.rows.map(r => `${r.season_number}-${r.episode_number}`));
+      const watchedEpisodes = new Set(watchedEpisodesRes.rows.map(r => `${r.season_number}-${r.episode_number}`));
 
-    // Clear existing episode data
-    await client.query(`
+      // Clear existing episode data
+      await client.query(`
       DELETE FROM episodes WHERE season_id IN (SELECT id FROM seasons WHERE media_id = $1)
     `, [id]);
-    await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
+      await client.query('DELETE FROM seasons WHERE media_id = $1', [id]);
 
-    // Fetch from TMDB
-    const tvRes = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}`, {
-      params: { api_key: process.env.TMDB_API_KEY }
-    });
-    const seasons = tvRes.data.seasons;
-
-    for (const season of seasons) {
-      if (season.season_number === 0) continue; // Skip specials by default
-      
-      const yearForSeason = season.air_date ? parseInt(season.air_date.substring(0, 4), 10) : null;
-      const seasonRes = await client.query(
-        'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
-        [id, season.season_number, yearForSeason]
-      );
-      const seasonIdForEpisode = seasonRes.rows[0].id;
-      console.log(`Added Season ${season.season_number} for ${media.title}`);
-
-      const seasonDetailRes = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}/season/${season.season_number}`, {
+      // Fetch from TMDB
+      const tvRes = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}`, {
         params: { api_key: process.env.TMDB_API_KEY }
       });
-      const episodes = seasonDetailRes.data.episodes;
+      const seasons = tvRes.data.seasons;
 
-      for (const ep of episodes) {
-        const isWatched = watchedEpisodes.has(`${season.season_number}-${ep.episode_number}`);
-        await client.query(
-          'INSERT INTO episodes (season_id, episode_number, title, air_date, is_watched) VALUES ($1, $2, $3, $4, $5)',
-          [seasonIdForEpisode, ep.episode_number, ep.name, ep.air_date ? new Date(ep.air_date) : null, isWatched]
+      for (const season of seasons) {
+        if (season.season_number === 0) continue; // Skip specials by default
+
+        const yearForSeason = season.air_date ? parseInt(season.air_date.substring(0, 4), 10) : null;
+        const seasonRes = await client.query(
+          'INSERT INTO seasons (media_id, season_number, year) VALUES ($1, $2, $3) RETURNING id',
+          [id, season.season_number, yearForSeason]
         );
-        console.log(`  Added S${season.season_number}E${ep.episode_number}: ${ep.name}`);
+        const seasonIdForEpisode = seasonRes.rows[0].id;
+        console.log(`Added Season ${season.season_number} for ${media.title}`);
+
+        const seasonDetailRes = await axios.get(`https://api.themoviedb.org/3/tv/${tmdbId}/season/${season.season_number}`, {
+          params: { api_key: process.env.TMDB_API_KEY }
+        });
+        const episodes = seasonDetailRes.data.episodes;
+
+        for (const ep of episodes) {
+          const isWatched = watchedEpisodes.has(`${season.season_number}-${ep.episode_number}`);
+          await client.query(
+            'INSERT INTO episodes (season_id, episode_number, title, air_date, is_watched) VALUES ($1, $2, $3, $4, $5)',
+            [seasonIdForEpisode, ep.episode_number, ep.name, ep.air_date ? new Date(ep.air_date) : null, isWatched]
+          );
+          console.log(`  Added S${season.season_number}E${ep.episode_number}: ${ep.name}`);
+        }
       }
     }
 
@@ -827,10 +956,10 @@ app.get('/api/media/:id/recommendations', async (req, res) => {
     const findRes = await axios.get(`${TMDB_BASE_URL}/find/${media.imdb_id}`, {
       params: { api_key: TMDB_API_KEY, external_source: 'imdb_id' }
     });
-    
+
     let tmdbId = null;
     let tmdbType = media.type === 'movie' ? 'movie' : 'tv';
-    
+
     if (tmdbType === 'movie' && findRes.data.movie_results.length > 0) {
       tmdbId = findRes.data.movie_results[0].id;
     } else if (tmdbType === 'tv' && findRes.data.tv_results.length > 0) {
@@ -848,13 +977,13 @@ app.get('/api/media/:id/recommendations', async (req, res) => {
     const results = recRes.data.results
       .map(item => {
         return {
-            id: item.id,
-            title: tmdbType === 'movie' ? item.title : item.name,
-            type: media.type,
-            poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : null,
-            year: (item.release_date || item.first_air_date || '').substring(0, 4),
-            overview: item.overview,
-            rating: item.vote_average ? item.vote_average.toFixed(1).toString() : null,
+          id: item.id,
+          title: tmdbType === 'movie' ? item.title : item.name,
+          type: media.type,
+          poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : null,
+          year: (item.release_date || item.first_air_date || '').substring(0, 4),
+          overview: item.overview,
+          rating: item.vote_average ? item.vote_average.toFixed(1).toString() : null,
         };
       })
       .filter(item => item !== null && item.poster_url);
@@ -934,7 +1063,7 @@ app.get('/api/recommendations/discover', async (req, res) => {
       params['vote_average.gte'] = min_rating;
       params['vote_count.gte'] = 50; // Filter out obscure items with 1 10-star vote
     }
-    
+
     if (keywords) {
       try {
         const keywordRes = await axios.get(`${TMDB_BASE_URL}/search/keyword`, {
@@ -944,8 +1073,8 @@ app.get('/api/recommendations/discover', async (req, res) => {
           // Take the top matching keyword ID
           params.with_keywords = keywordRes.data.results[0].id;
         } else {
-           // If keyword not found on TMDB, return empty list immediately
-           return res.json([]);
+          // If keyword not found on TMDB, return empty list immediately
+          return res.json([]);
         }
       } catch (err) {
         console.error("Failed to fetch keyword ID:", err.message);
@@ -1045,7 +1174,7 @@ app.get('/api/recommendations/discover', async (req, res) => {
     const promises = [];
     const startPage = parseInt(page, 10);
     const numPages = parseInt(count, 10);
-    
+
     for (let i = 0; i < numPages; i++) {
       promises.push(axios.get(`${TMDB_BASE_URL}${endpoint}`, {
         params: { ...params, page: startPage + i }
@@ -1053,10 +1182,10 @@ app.get('/api/recommendations/discover', async (req, res) => {
     }
 
     const responses = await Promise.all(promises);
-    
+
     // Combine results from all pages
     const allResults = responses.flatMap(response => response.data.results);
-    
+
     // Deduplicate by ID
     const seenIds = new Set();
     const uniqueResults = [];
@@ -1072,12 +1201,12 @@ app.get('/api/recommendations/discover', async (req, res) => {
         const mediaType = item.media_type || defaultMediaType;
         if (mediaType !== 'movie' && mediaType !== 'tv') return null; // Filter out people
         return {
-            id: item.id,
-            title: mediaType === 'movie' ? item.title : item.name,
-            type: mediaType === 'movie' ? 'movie' : 'tv_show',
-            poster_path: item.poster_path,
-            year: (item.release_date || item.first_air_date || '').substring(0, 4),
-            overview: item.overview,
+          id: item.id,
+          title: mediaType === 'movie' ? item.title : item.name,
+          type: mediaType === 'movie' ? 'movie' : 'tv_show',
+          poster_path: item.poster_path,
+          year: (item.release_date || item.first_air_date || '').substring(0, 4),
+          overview: item.overview,
         };
       })
       .filter(item => item !== null && item.poster_path);
@@ -1103,7 +1232,7 @@ const backfillRichMetadata = async () => {
       WHERE m.backdrop_url IS NULL 
          OR NOT EXISTS (SELECT 1 FROM media_genres mg WHERE mg.media_id = m.id)
     `);
-    
+
     if (rows.length === 0) {
       console.log('No media requires backfilling.');
       return;
@@ -1114,15 +1243,15 @@ const backfillRichMetadata = async () => {
     for (const media of rows) {
       try {
         console.log(`Backfilling metadata for: ${media.title} (${media.imdb_id})`);
-        
+
         // Find TMDB ID
         const findRes = await axios.get(`https://api.themoviedb.org/3/find/${media.imdb_id}`, {
           params: { api_key: process.env.TMDB_API_KEY, external_source: 'imdb_id' }
         });
-        
+
         let tmdbId = null;
         let tmdbType = media.type === 'movie' ? 'movie' : 'tv';
-        
+
         if (tmdbType === 'movie' && findRes.data.movie_results.length > 0) {
           tmdbId = findRes.data.movie_results[0].id;
         } else if (tmdbType === 'tv' && findRes.data.tv_results.length > 0) {
@@ -1144,7 +1273,7 @@ const backfillRichMetadata = async () => {
           let networks = [];
           let creators = [];
           let watch_providers = [];
-          
+
           if (d.videos && d.videos.results) {
             const trailer = d.videos.results.find(v => v.type === 'Trailer' && v.site === 'YouTube');
             if (trailer) trailer_url = `https://www.youtube.com/watch?v=${trailer.key}`;
@@ -1183,7 +1312,7 @@ const backfillRichMetadata = async () => {
                 if (name === 'Apple TV Plus') name = 'Apple TV+';
                 if (name === 'Paramount Plus') name = 'Paramount+';
                 if (name === 'Peacock Premium') name = 'Peacock';
-                
+
                 if (allowedPlatforms.includes(name) && !watch_providers.some(wp => wp.platform === name)) {
                   watch_providers.push({ platform: name, url: link });
                 }
@@ -1192,7 +1321,7 @@ const backfillRichMetadata = async () => {
           }
 
           await client.query('BEGIN');
-          
+
           await client.query(`
             UPDATE media SET 
               backdrop_url = $1, 
@@ -1209,14 +1338,14 @@ const backfillRichMetadata = async () => {
           // Only insert streaming links if the item currently has none (preserves manual edits)
           const existingLinks = await client.query('SELECT 1 FROM streaming_links WHERE media_id = $1', [media.id]);
           if (existingLinks.rowCount === 0) {
-              for (const wp of watch_providers) {
-                await client.query(
-                  'INSERT INTO streaming_links (media_id, url, platform) VALUES ($1, $2, $3)',
-                  [media.id, wp.url, wp.platform]
-                );
-              }
+            for (const wp of watch_providers) {
+              await client.query(
+                'INSERT INTO streaming_links (media_id, url, platform) VALUES ($1, $2, $3)',
+                [media.id, wp.url, wp.platform]
+              );
+            }
           }
-          
+
           if (d.genres && d.genres.length > 0) {
             for (const g of d.genres) {
               const name = g.name;
@@ -1234,14 +1363,14 @@ const backfillRichMetadata = async () => {
           await client.query('COMMIT');
           console.log(`  Updated metadata for ${media.title}`);
         } else {
-            console.log(`  Could not find TMDB ID for ${media.title}`);
+          console.log(`  Could not find TMDB ID for ${media.title}`);
         }
-        
+
         // Sleep for 250ms to respect TMDB rate limits
         await new Promise(resolve => setTimeout(resolve, 250));
-        
+
       } catch (e) {
-        await client.query('ROLLBACK').catch(() => {}); // Catch potential rollback error if transaction wasn't active
+        await client.query('ROLLBACK').catch(() => { }); // Catch potential rollback error if transaction wasn't active
         console.error(`  Error backfilling ${media.title}:`, e.message);
       }
     }

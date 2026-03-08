@@ -72,7 +72,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
   const [isStreamingLinksModalOpen, setIsStreamingLinksModalOpen] = useState(false);
   const [collapsedSeasons, setCollapsedSeasons] = useState<Record<number, boolean>>({});
   const initializedMediaId = useRef<number | null>(null);
-  
+
   const recScrollerRef = useRef<HTMLDivElement>(null);
   const recScrollPos = useRef<number>(0);
 
@@ -95,11 +95,11 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
         const airedEpisodes = season.episodes.filter(ep => !ep.air_date || new Date(ep.air_date) <= new Date());
         const allAiredWatched = airedEpisodes.length > 0 && airedEpisodes.every(ep => ep.is_watched);
         const hasUnaired = season.episodes.some(ep => ep.air_date && new Date(ep.air_date) > new Date());
-        
+
         if (hasEpisodes && allAiredWatched && !hasUnaired) {
-            initialState[season.id] = true;
+          initialState[season.id] = true;
         } else {
-            initialState[season.id] = false;
+          initialState[season.id] = false;
         }
       });
       setCollapsedSeasons(initialState);
@@ -167,7 +167,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [mediaId, onClose, isPreviewOpen]);
-  
+
   const makeApiCall = async (url: string, method: string, body?: object) => {
     try {
       const res = await fetch(url, {
@@ -225,13 +225,13 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
     setMedia({ ...media, seasons: newSeasons });
     makeApiCall(`/api/episodes/${episode.id}/watched`, 'POST', { is_watched: episode.is_watched });
   };
-  
+
   const toggleSeasonWatched = (seasonIdx: number) => {
     if (!media || !media.seasons) return;
-    
+
     const newSeasons = media.seasons.map((season, sIdx) => {
       if (sIdx !== seasonIdx) return season;
-      
+
       const newWatchedState = !season.is_watched;
       const newEpisodes = season.episodes.map(ep => {
         const hasAired = !ep.air_date || new Date(ep.air_date) <= new Date();
@@ -315,7 +315,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
       const hostname = new URL(url).hostname;
       // Check if hostname looks like a normal domain (has letters, maybe dots/dashes, no purely numeric/IP look)
       if (/[a-zA-Z]/.test(hostname) && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
-         return `Watch on ${hostname.replace('www.', '')}`;
+        return `Watch on ${hostname.replace('www.', '')}`;
       }
     } catch (e) {
       // ignore invalid URLs
@@ -342,7 +342,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
           <div className="detail-info">
             <h1>{media.title} ({media.year})</h1>
             {media.tagline && <p style={{ fontStyle: 'italic', color: '#aaa', margin: '0 0 1rem 0' }}>{media.tagline}</p>}
-            
+
             <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
               <a href={`https://www.imdb.com/title/${media.imdb_id}`} target="_blank" rel="noopener noreferrer" className="detail-rating">
                 ⭐ {media.rating}
@@ -355,7 +355,7 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
             <div className="detail-genres">
               {media.genres.map(genre => <span key={genre} className="genre-chip">{genre}</span>)}
             </div>
-            
+
             {media.networks && <p style={{ fontSize: '0.9rem', color: '#bbb' }}><strong>Network/Studio:</strong> {media.networks}</p>}
             {media.creators && <p style={{ fontSize: '0.9rem', color: '#bbb' }}><strong>Creator/Director:</strong> {media.creators}</p>}
 
@@ -388,18 +388,16 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
               <button onClick={() => setIsStreamingLinksModalOpen(true)} className="streaming-link-button"></button>
             </div>
             <p className="detail-description">{media.description}</p>
-            
+
             <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
               {media.type === 'movie' && (
                 <button onClick={toggleMediaWatched} className="watch-button" style={{ marginTop: 0 }}>
                   {media.is_watched ? 'Mark as Unwatched' : 'Mark as Watched'}
                 </button>
               )}
-              {media.type === 'tv_show' && (
-                <button onClick={handleRescrape} className="watch-button" style={{ marginTop: 0 }}>
-                  Re-scrape Episodes
-                </button>
-              )}
+              <button onClick={handleRescrape} className="watch-button" style={{ marginTop: 0 }}>
+                {media.type === 'tv_show' ? 'Re-scrape Details & Episodes' : 'Re-scrape Details'}
+              </button>
               {media.trailer_url && (
                 <a href={media.trailer_url} target="_blank" rel="noopener noreferrer" className="watch-button" style={{ textDecoration: 'none', display: 'inline-block', marginTop: 0, backgroundColor: '#e50914', color: '#fff', fontWeight: 'bold' }}>
                   ▶ Watch Trailer
@@ -422,16 +420,16 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
                 const isCollapsed = collapsedSeasons[season.id];
                 return (
                   <div key={season.id} className="season">
-                    <div 
-                      className="season-header" 
+                    <div
+                      className="season-header"
                       onClick={() => toggleSeasonCollapse(season.id)}
                       style={{ cursor: 'pointer', userSelect: 'none' }}
                     >
                       <h3 style={{ margin: 0, borderBottom: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         {isCollapsed ? '▶' : '▼'} Season {season.season_number} ({season.year})
                       </h3>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); toggleSeasonWatched(seasonIdx); }} 
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleSeasonWatched(seasonIdx); }}
                         className="watch-button season-watch-button"
                         style={{ marginTop: 0 }}
                         disabled={season.episodes.some(ep => !ep.air_date || new Date(ep.air_date) > new Date())}
@@ -446,14 +444,14 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
                           return (
                             <li key={episode.id} className={episode.is_watched ? 'watched' : ''}>
                               <label>
-                                <input 
-                                  type="checkbox" 
+                                <input
+                                  type="checkbox"
                                   checked={episode.is_watched}
                                   onChange={() => hasAired && toggleEpisodeWatched(seasonIdx, episodeIdx)}
                                   disabled={!hasAired}
                                 />
                                 Ep {episode.episode_number}: {episode.title}
-                                {episode.air_date && <span className="air-date" style={{marginLeft: '8px'}}>({new Date(episode.air_date).toLocaleDateString()})</span>}
+                                {episode.air_date && <span className="air-date" style={{ marginLeft: '8px' }}>({new Date(episode.air_date).toLocaleDateString()})</span>}
                               </label>
                             </li>
                           );
@@ -470,22 +468,22 @@ const MediaDetail: React.FC<MediaDetailProps> = ({ mediaId, onClose, onPreview, 
         {recommendations.length > 0 && (
           <>
             <h2 style={{ marginTop: '2rem' }}>More Like This</h2>
-            <div 
+            <div
               ref={recScrollerRef}
               onScroll={handleRecScroll}
               style={{ display: 'flex', gap: '1rem', overflowX: 'auto', paddingBottom: '1rem' }}
             >
               {recommendations.map(rec => (
-                <div 
-                  key={rec.id} 
+                <div
+                  key={rec.id}
                   style={{ minWidth: '120px', cursor: 'pointer', transition: 'transform 0.2s' }}
                   onClick={() => onPreview && onPreview(rec)}
                   title={rec.title}
                 >
-                  <img 
-                    src={rec.poster_url || ''} 
-                    alt={rec.title} 
-                    style={{ width: '120px', height: '180px', objectFit: 'cover', borderRadius: '8px' }} 
+                  <img
+                    src={rec.poster_url || ''}
+                    alt={rec.title}
+                    style={{ width: '120px', height: '180px', objectFit: 'cover', borderRadius: '8px' }}
                   />
                 </div>
               ))}
