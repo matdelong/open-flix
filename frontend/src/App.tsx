@@ -14,6 +14,7 @@ interface Media {
   year: number | null;
   isRemote?: boolean;
   overview?: string;
+  rating?: string;
 }
 
 type GroupedMedia = Record<string, Media[]>;
@@ -28,7 +29,7 @@ function App() {
   const [addMediaError, setAddMediaError] = useState(''); // New state for modal-specific error
   const [activeTab, setActiveTab] = useState<'tv_show' | 'movie'>('tv_show');
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null);
-  
+
   // Search state
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,7 +46,7 @@ function App() {
   const [previewMedia, setPreviewMedia] = useState<Media | null>(null); // For previewing TMDB items
   const [tmdbEnabled, setTmdbEnabled] = useState(false);
   const [rowScrollPositions, setRowScrollPositions] = useState<Record<string, number>>({});
-  
+
   const [customFilters, setCustomFilters] = useState({
     type: 'movie',
     genre: '',
@@ -166,7 +167,7 @@ function App() {
       });
 
       console.log('Fetch response:', res);
-      
+
       if (res.status === 401) {
         handleSignOut();
         return;
@@ -184,7 +185,7 @@ function App() {
       if (!res.ok) {
         throw new Error(data.error || `HTTP error! status: ${res.status}`);
       }
-      
+
       const addedMedia = data;
 
       await fetchMedia(); // Refresh the media list
@@ -232,9 +233,9 @@ function App() {
       setRemoteSearchResults([]);
       return;
     }
-    
+
     const lowerQuery = query.toLowerCase();
-    const results = allMedia.filter(item => 
+    const results = allMedia.filter(item =>
       item.title.toLowerCase().includes(lowerQuery)
     );
     setSearchResults(results.slice(0, 10)); // Limit to 10 local results
@@ -253,7 +254,8 @@ function App() {
             poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w200${item.poster_path}` : null,
             year: item.year ? parseInt(item.year) : null,
             isRemote: true,
-            overview: item.overview
+            overview: item.overview,
+            rating: item.rating
           }));
           setRemoteSearchResults(remoteData.slice(0, 5)); // Limit to 5 remote results
         }
@@ -288,58 +290,59 @@ function App() {
   const fetchDiscover = async (filter: string = 'custom', page: number = 1, overrideFilters?: any) => {
     if (isLoadingDiscover) return;
     setIsLoadingDiscover(true);
-    
+
     if (filter !== discoverFilter || page === 1) {
-        setDiscoverFilter(filter);
-        setDiscoverPage(1);
-        setHasMoreDiscover(true);
-        if (page === 1) setTrendingMedia([]);
+      setDiscoverFilter(filter);
+      setDiscoverPage(1);
+      setHasMoreDiscover(true);
+      if (page === 1) setTrendingMedia([]);
     }
 
     try {
       let url = `/api/recommendations/discover?filter=${filter}&page=${page}&count=1`;
       if (filter === 'custom') {
-          const filters = overrideFilters || customFilters;
-          url += `&type=${filters.type}`;
-          if (filters.genre) url += `&genres=${filters.genre}`;
-          if (filters.minRating) url += `&min_rating=${filters.minRating}`;
-          if (filters.yearFrom) url += `&year_from=${filters.yearFrom}`;
-          if (filters.yearTo) url += `&year_to=${filters.yearTo}`;
-          if (filters.keywords) url += `&keywords=${encodeURIComponent(filters.keywords)}`;
+        const filters = overrideFilters || customFilters;
+        url += `&type=${filters.type}`;
+        if (filters.genre) url += `&genres=${filters.genre}`;
+        if (filters.minRating) url += `&min_rating=${filters.minRating}`;
+        if (filters.yearFrom) url += `&year_from=${filters.yearFrom}`;
+        if (filters.yearTo) url += `&year_to=${filters.yearTo}`;
+        if (filters.keywords) url += `&keywords=${encodeURIComponent(filters.keywords)}`;
       }
-      
+
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        
+
         if (data.length === 0) {
-            setHasMoreDiscover(false);
+          setHasMoreDiscover(false);
         }
 
         // Create a Set of existing titles for faster lookup
         const existingTitles = new Set(allMedia.map(m => m.title.toLowerCase()));
 
         const formatted: Media[] = data.map((item: any) => ({
-            id: item.id,
-            title: item.title,
-            type: item.type,
-            poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w300${item.poster_path}` : null,
-            year: item.year ? parseInt(item.year) : null,
-            isRemote: true,
-            overview: item.overview
+          id: item.id,
+          title: item.title,
+          type: item.type,
+          poster_url: item.poster_path ? `https://image.tmdb.org/t/p/w300${item.poster_path}` : null,
+          year: item.year ? parseInt(item.year) : null,
+          isRemote: true,
+          overview: item.overview,
+          rating: item.rating
         })).filter((item: Media) => !existingTitles.has(item.title.toLowerCase()));
 
         setTrendingMedia(prev => {
-            if (page === 1) return formatted;
-            const existingIds = new Set(prev.map(item => item.id));
-            const newUniqueItems = formatted.filter(item => !existingIds.has(item.id));
-            return [...prev, ...newUniqueItems];
+          if (page === 1) return formatted;
+          const existingIds = new Set(prev.map(item => item.id));
+          const newUniqueItems = formatted.filter(item => !existingIds.has(item.id));
+          return [...prev, ...newUniqueItems];
         });
       }
     } catch (err) {
       console.error("Failed to fetch discover:", err);
     } finally {
-        setIsLoadingDiscover(false);
+      setIsLoadingDiscover(false);
     }
   };
 
@@ -360,15 +363,15 @@ function App() {
   const handleDiscoverScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     if (scrollHeight - scrollTop - clientHeight < 300 && !isLoadingDiscover && hasMoreDiscover) {
-        const nextPage = discoverPage + 1;
-        setDiscoverPage(nextPage);
-        fetchDiscover(discoverFilter, nextPage);
+      const nextPage = discoverPage + 1;
+      setDiscoverPage(nextPage);
+      fetchDiscover(discoverFilter, nextPage);
     }
   };
 
   const handlePreview = (media: Media) => {
-    const existing = allMedia.find(m => 
-      m.title.toLowerCase() === media.title.toLowerCase() && 
+    const existing = allMedia.find(m =>
+      m.title.toLowerCase() === media.title.toLowerCase() &&
       (m.year === media.year || !media.year || !m.year)
     );
 
@@ -378,7 +381,7 @@ function App() {
       setPreviewMedia(null);
     } else {
       setPreviewMedia(media);
-      setIsSearchOpen(false); 
+      setIsSearchOpen(false);
     }
   };
 
@@ -388,7 +391,7 @@ function App() {
 
   const handleAddFromTMDB = async () => {
     if (!previewMedia) return;
-    
+
     setIsLoading(true);
     setAddMediaError('');
 
@@ -403,8 +406,8 @@ function App() {
         const data = await res.json();
         window.alert("Media already exists. Opening it now.");
         if (data.existingMediaId) {
-            setSelectedMediaId(data.existingMediaId);
-            setActiveTab(previewMedia.type);
+          setSelectedMediaId(data.existingMediaId);
+          setActiveTab(previewMedia.type);
         }
         closePreview();
         return;
@@ -425,6 +428,32 @@ function App() {
       window.alert(`Failed to add media: ${err.message}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const [isLoadingRating, setIsLoadingRating] = useState(false);
+
+  const handleRatingClick = async (media: Media) => {
+    if (!tmdbEnabled || isLoadingRating) return;
+
+    setIsLoadingRating(true);
+    try {
+      const res = await fetch(`/api/tmdb/${media.type}/${media.id}/external_ids`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.imdb_id) {
+          window.open(`https://www.imdb.com/title/${data.imdb_id}`, '_blank');
+        } else {
+          window.alert("No IMDB ID found for this media.");
+        }
+      } else {
+        window.alert("Failed to fetch IMDB link.");
+      }
+    } catch (err) {
+      console.error("Failed to fetch external IDs:", err);
+      window.alert("Failed to fetch IMDB link.");
+    } finally {
+      setIsLoadingRating(false);
     }
   };
 
@@ -530,7 +559,7 @@ function App() {
             {filteredCategories.map(category => {
               const itemsForCategory = groupedMedia[category].filter(item => item.type === activeTab);
               return (
-                <MediaRow 
+                <MediaRow
                   key={category}
                   title={category}
                   media={itemsForCategory}
@@ -561,14 +590,14 @@ function App() {
             <div className="modal-header">
               <button className="close-button" onClick={() => setIsTrendingModalOpen(false)}>&times;</button>
               <h2 style={{ marginBottom: '1rem' }}>Discover Media</h2>
-              
+
               <div className="discover-filters-container">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="discover-filter-input"
-                  placeholder="Keywords..." 
+                  placeholder="Keywords..."
                   value={customFilters.keywords}
-                  onChange={(e) => setCustomFilters({...customFilters, keywords: e.target.value})}
+                  onChange={(e) => setCustomFilters({ ...customFilters, keywords: e.target.value })}
                   onKeyDown={handleKeywordSubmit}
                 />
                 <select className="discover-filter-select" value={customFilters.type} onChange={(e) => handleCustomFilterChange('type', e.target.value)}>
@@ -598,16 +627,16 @@ function App() {
                   <option value="8">8+ Stars</option>
                 </select>
                 <select className="discover-filter-select" value={customFilters.yearFrom} onChange={(e) => {
-                    const from = e.target.value;
-                    let to = '';
-                    if (from === 'this_year' || from === 'coming_soon') {
-                      to = from;
-                    } else if (from) {
-                      to = String(parseInt(from) + 9);
-                    }
-                    const newFilters = { ...customFilters, yearFrom: from, yearTo: to };
-                    setCustomFilters(newFilters);
-                    fetchDiscover('custom', 1, newFilters);
+                  const from = e.target.value;
+                  let to = '';
+                  if (from === 'this_year' || from === 'coming_soon') {
+                    to = from;
+                  } else if (from) {
+                    to = String(parseInt(from) + 9);
+                  }
+                  const newFilters = { ...customFilters, yearFrom: from, yearTo: to };
+                  setCustomFilters(newFilters);
+                  fetchDiscover('custom', 1, newFilters);
                 }}>
                   <option value="">Any Time</option>
                   <option value="coming_soon">Coming Soon</option>
@@ -618,11 +647,11 @@ function App() {
                   <option value="1990">1990s</option>
                   <option value="1980">1980s</option>
                 </select>
-                <button className="discover-filter-button" onClick={() => { 
+                <button className="discover-filter-button" onClick={() => {
                   const reset = { type: 'movie', genre: '', minRating: '', yearFrom: '', yearTo: '', keywords: '' };
-                  setCustomFilters(reset); 
-                  setDiscoverFilter('trending'); 
-                  fetchDiscover('trending', 1); 
+                  setCustomFilters(reset);
+                  setDiscoverFilter('trending');
+                  fetchDiscover('trending', 1);
                 }}>Reset</button>
               </div>
             </div>
@@ -647,21 +676,46 @@ function App() {
           <div className="modal-content preview-modal">
             <button className="close-button" onClick={closePreview}>&times;</button>
             <div className="preview-header">
-                {previewMedia.poster_url && <img src={previewMedia.poster_url} alt={previewMedia.title} className="preview-poster" />}
-                <div className="preview-info">
-                    <h2>{previewMedia.title} ({previewMedia.year})</h2>
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
-                      <p className="preview-type" style={{ margin: 0 }}>{previewMedia.type === 'movie' ? 'Movie' : 'TV Show'}</p>
-                      {(previewMedia as any).rating && <span style={{ color: '#46d369', fontWeight: 'bold' }}>⭐ {(previewMedia as any).rating}</span>}
-                    </div>
-                    <p className="preview-overview">{previewMedia.overview}</p>
-                    <div className="modal-actions">
-                        <button onClick={handleAddFromTMDB} disabled={isLoading}>
-                            {isLoading ? 'Adding...' : 'Add to Library'}
-                        </button>
-                        <button onClick={closePreview}>Cancel</button>
-                    </div>
+              {previewMedia.poster_url && <img src={previewMedia.poster_url} alt={previewMedia.title} className="preview-poster" />}
+              <div className="preview-info">
+                <h2>{previewMedia.title} ({previewMedia.year})</h2>
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+                  <p className="preview-type" style={{ margin: 0 }}>{previewMedia.type === 'movie' ? 'Movie' : 'TV Show'}</p>
+                  {previewMedia.rating && (
+                    <button
+                      onClick={() => handleRatingClick(previewMedia)}
+                      disabled={isLoadingRating}
+                      className="rating-button"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#46d369',
+                        fontWeight: 'bold',
+                        cursor: 'pointer',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        transition: 'background-color 0.2s',
+                        opacity: isLoadingRating ? 0.6 : 1
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(70, 211, 105, 0.1)'}
+                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      title="View on IMDB"
+                    >
+                      ⭐ {isLoadingRating ? '...' : previewMedia.rating}
+                    </button>
+                  )}
                 </div>
+                <p className="preview-overview">{previewMedia.overview}</p>
+                <div className="modal-actions">
+                  <button onClick={handleAddFromTMDB} disabled={isLoading}>
+                    {isLoading ? 'Adding...' : 'Add to Library'}
+                  </button>
+                  <button onClick={closePreview}>Cancel</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -683,8 +737,8 @@ function App() {
               {addMediaError && <p className="error-message">{addMediaError}</p>}
               <div className="modal-actions" style={{ justifyContent: 'space-between', width: '100%' }}>
                 {tmdbEnabled ? (
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={openDiscoverModal}
                   >
                     Discover More

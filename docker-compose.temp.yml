@@ -1,0 +1,14 @@
+services:
+  frontend:
+    platform: linux/arm64  # Resets to native architecture for speed
+    build:
+      context: ./frontend
+  backend:
+    platform: linux/arm64 # Resets to native architecture for speed
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=openflix
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - WEB_PIN=0270
+      - TMDB_API_KEY=aea0068d18ccebb158db3be13dab239f

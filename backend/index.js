@@ -1024,6 +1024,7 @@ app.get('/api/search/tmdb', async (req, res) => {
         poster_path: item.poster_path,
         year: (item.release_date || item.first_air_date || '').substring(0, 4),
         overview: item.overview,
+        rating: item.vote_average ? parseFloat(item.vote_average).toFixed(1) : null,
         media_type: item.media_type // keep original type for logic
       }));
 
@@ -1207,6 +1208,7 @@ app.get('/api/recommendations/discover', async (req, res) => {
           poster_path: item.poster_path,
           year: (item.release_date || item.first_air_date || '').substring(0, 4),
           overview: item.overview,
+          rating: item.vote_average ? parseFloat(item.vote_average).toFixed(1) : null,
         };
       })
       .filter(item => item !== null && item.poster_path);
@@ -1220,6 +1222,27 @@ app.get('/api/recommendations/discover', async (req, res) => {
 
 app.get('/api/config', (req, res) => {
   res.json({ tmdbEnabled: !!process.env.TMDB_API_KEY });
+});
+
+// New endpoint for fetching external IDs (primarily IMDB) for TMDB items
+app.get('/api/tmdb/:type/:id/external_ids', async (req, res) => {
+  if (!TMDB_API_KEY) {
+    return res.status(503).json({ error: 'TMDB API key not configured' });
+  }
+
+  const { type, id } = req.params;
+  const tmdbType = type === 'tv_show' ? 'tv' : 'movie'; // Map our internal type format to TMDB's format
+
+  try {
+    const response = await axios.get(`${TMDB_BASE_URL}/${tmdbType}/${id}/external_ids`, {
+      params: { api_key: TMDB_API_KEY }
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error(`TMDB External IDs Error (${tmdbType} ${id}):`, error.message);
+    res.status(500).json({ error: 'Failed to fetch external IDs from TMDB' });
+  }
 });
 
 const backfillRichMetadata = async () => {
